@@ -93,6 +93,41 @@ Access the web interface at `http://<raspberry-pi-ip>:5000`.
 
 ---
 
+## Accessing the Pi from Mac
+
+**SSH:**
+```bash
+tailscale ssh pi@raspberrypi
+```
+
+**Mount the project directory for editing (sshfs):**
+```bash
+sshfs -o reconnect,ServerAliveInterval=15,ServerAliveCountMax=3 \
+      -o volname="Pi-Autolab" \
+      pi@100.72.164.72:/home/pi/autolab ~/pi-autolab
+```
+
+The project files will appear at `~/pi-autolab`. Unmount when done:
+```bash
+umount ~/pi-autolab
+```
+
+**Browser access:**
+
+Since both the Mac and the Pi are Tailscale devices, open your browser and navigate to:
+
+```
+http://raspberrypi:5000
+```
+
+or using the Pi's Tailscale IP directly:
+
+```
+http://100.72.164.72:5000
+```
+
+---
+
 ## Troubleshooting
 
 **Serial permission denied**
