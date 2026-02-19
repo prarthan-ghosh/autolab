@@ -1,9 +1,13 @@
 # Printer Interface Requirements
 
-# Web framework
-Flask>=2.3.0
-Flask-SocketIO>=5.3.0
-eventlet>=0.33.0
+# Web framework (ASGI)
+fastapi>=0.110.0
+uvicorn[standard]>=0.27.0
+python-socketio>=5.10.0
+python-engineio>=4.9.0
+
+# FSM
+transitions>=0.9.0
 
 # Hardware control (for connected mode)
 pigpio>=1.78
@@ -14,10 +18,6 @@ pyserial>=3.5
 # Install with: sudo apt install python3-picamera2
 # Or use venv with --system-site-packages
 picamera2>=0.3.12
-
-# Image processing (for test mode camera simulation)
-Pillow>=9.0.0
-numpy>=1.21.0
 
 # Configuration
 PyYAML>=6.0.0

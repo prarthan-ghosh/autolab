@@ -1,400 +1,127 @@
-# Printer Interface with Camera Streaming
+# Autolab Printer Interface
 
-A unified web-based interface for controlling a 3D printer gantry system with live camera monitoring and hardware abstraction.
+A web-based interface for controlling a 3D printer gantry with live camera monitoring. Runs on a Raspberry Pi and exposes a browser UI for jogging, homing, and emergency-stopping the nozzle while streaming a live MJPEG feed from the HQ Camera.
 
-## Features
+---
 
-- **Live Camera Streaming**: Real-time MJPEG video stream from Raspberry Pi camera
-  - Supports Raspberry Pi HQ Camera (IMX477) with manual focus lenses
-  - Configurable image quality, sharpness, and streaming resolution
-  - Optimized for Arducam C-mount lenses
-- **Dual Mode Operation**: 
-  - **Test Mode**: Simulates all hardware behavior without sending Arduino commands
-  - **Connected Mode**: Sends actual Arduino commands to real hardware
-- **Gantry Control**: Move printer nozzle in X, Y, and Z axes via G-code commands
-- **Emergency Stop**: Hardware and software emergency stop functionality
-- **Real-time Telemetry**: Live position and status updates via WebSocket
+## Hardware Requirements
 
-## Quick Start
+- Raspberry Pi 4 (or later)
+- Raspberry Pi HQ Camera (IMX477) with Arducam C-mount LN046 manual focus lens
+- Anycubic Kobra 2 Neo (or any Marlin-based printer) connected via USB
+- GPIO wiring: momentary button between GPIO 27 and GND for hardware e-stop
 
-### Installation
+---
 
-1. **Clone the repository**:
-   ```bash
-   git clone <repository-url>
-   cd pi-autolab
-   ```
+## Setup
 
-2. **Create virtual environment** (on Raspberry Pi, use `--system-site-packages`):
-   ```bash
-   python3 -m venv --system-site-packages venv
-   source venv/bin/activate
-   ```
-
-3. **Install dependencies**:
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-4. **On Raspberry Pi, install system packages**:
-   ```bash
-   sudo apt update
-   sudo apt install -y python3-picamera2 python3-flask python3-libcamera
-   ```
-
-### Running the Server
-
-**Test Mode** (simulation, no Arduino commands):
 ```bash
-python server.py --mode test
+# 1. Create venv (use --system-site-packages so picamera2 is accessible)
+python3 -m venv --system-site-packages venv
+source venv/bin/activate
+
+# 2. Install Python dependencies
+pip install -r requirements.txt
+
+# 3. Install system packages (Raspberry Pi only)
+sudo apt update
+sudo apt install -y python3-picamera2 python3-libcamera pigpio
+
+# 4. Start pigpio daemon (required for GPIO e-stop)
+sudo systemctl enable --now pigpiod
 ```
 
-**Connected Mode** (real hardware):
-```bash
-python server.py --mode connected
-```
-
-**Custom port and host**:
-```bash
-python server.py --mode test --port 5000 --host 0.0.0.0
-```
-
-Access the web interface at `http://<raspberry-pi-ip>:5000`
+---
 
 ## Configuration
 
-Edit the configuration files to match your hardware:
+Edit the `.yml` file that matches your mode before starting:
 
-- `config_test.yml` - Test mode configuration
-- `config_connected.yml` - Connected mode configuration
+| File | Used in |
+|------|---------|
+| `config_test.yml` | Test / simulation mode |
+| `config_connected.yml` | Connected mode (real hardware) |
 
-Key settings:
-- **Camera**: Image quality, sharpness, focus settings, streaming resolution
-- **Printer**: Serial device, safe limits, feedrates
-- **Safety**: Emergency stop pin, power settings
+Key sections:
 
-### Camera Configuration
+- **`printer`** — serial device path, baud rate, axis swap, safe movement limits, default feedrate
+- **`camera`** — sharpness and JPEG quality (focus is set physically on the lens)
+- **`stream`** — preview resolution and frame rate
+- **`emergency_stop`** — GPIO pin number
+- **`simulation`** — `movement_delay` (test mode only, controls interpolation speed)
 
-The camera settings are configured in the `camera` section of the config files:
+---
 
-```yaml
-camera:
-  # For manual focus lenses (like Arducam C-mount LN046)
-  # Adjust focus by physically rotating the focus ring on the lens
-  focus_distance: null  # Leave as null for physical manual focus lenses
-  
-  # Image quality settings
-  sharpness: 2.0  # Sharpness level (0.0-16.0, default 1.0) - higher = sharper
-  jpeg_quality: 85  # JPEG compression quality (1-100, default 75) - higher = better quality
+## Running
 
-stream:
-  preview_width: 1920  # Stream resolution width (px)
-  preview_height: 1080  # Stream resolution height (px)
-  preview_fps: 15  # Frames per second
+**Test mode** (simulation, no hardware required):
+
+```bash
+export SECRET_KEY=change_me_in_production
+python server.py --mode test
+# or via uvicorn directly:
+SECRET_KEY=dev python -m uvicorn server:app --port 5000
 ```
 
-**Note for Manual Focus Lenses**: If you're using a manual focus lens like the Arducam C-mount LN046, you must physically adjust the focus ring on the lens itself. The `focus_distance` setting is for motorized focus lenses only and won't work with simple manual focus lenses.
+**Connected mode** (real hardware):
 
-## Architecture
-
-The system uses a hardware abstraction layer (HAL) pattern:
-
-```
-Web UI → Flask Server → Hardware Interface → Mode Implementation
+```bash
+export SECRET_KEY=change_me_in_production
+python server.py --mode connected
 ```
 
-- **Test Mode**: `hw/test_hardware.py` - Simulates hardware behavior
-- **Connected Mode**: `hw/connected_hardware.py` - Real hardware control via pyserial and picamera2
+**Custom host / port:**
 
-Both modes implement the same interface (`hw/abstract_hardware.py`), ensuring consistent behavior.
-
-## API
-
-### HTTP Endpoints
-- `GET /` - Main web UI
-- `GET /stream` - MJPEG camera stream
-- `POST /capture` - Capture high-resolution image
-
-### WebSocket Events (SocketIO)
-
-**Commands** (client → server):
-- `cmd.move_nozzle` - Move nozzle to position `{x, y, z, feedrate}`
-- `cmd.move_nozzle_xy` - Move nozzle XY only `{x, y, feedrate}`
-- `cmd.move_nozzle_z` - Move nozzle Z only `{z, feedrate}`
-- `cmd.emergency_stop` - Emergency stop
-
-**Telemetry** (server → client):
-- `telemetry.position` - Position updates `{nozzle: {x, y, z}, status: ...}`
-- `telemetry.command_ack` - Command acknowledgments `{id, status, message, timestamp}`
-
-## Project Structure
-
-```
-pi-autolab/
-├── server.py              # Main server with camera streaming
-├── config_test.yml        # Test mode configuration
-├── config_connected.yml   # Connected mode configuration
-├── requirements.txt       # Python dependencies
-├── hw/
-│   ├── abstract_hardware.py    # Hardware interface definition
-│   ├── test_hardware.py         # Test mode (simulation)
-│   ├── connected_hardware.py    # Connected mode (real hardware)
-│   └── hardware_factory.py      # Hardware factory
-└── ui/
-    ├── templates/
-    │   └── index.html     # Web UI
-    └── static/
-        ├── css/
-        │   └── style.css
-        └── js/
-            └── app.js      # Frontend JavaScript
+```bash
+python server.py --mode test --host 0.0.0.0 --port 8080
 ```
 
-## Modes Explained
+Access the web interface at `http://<raspberry-pi-ip>:5000`.
 
-### Test Mode
-- **Purpose**: Development and testing without hardware
-- **Behavior**: Simulates all hardware operations with realistic timing
-- **Arduino Commands**: **NOT SENT** - All commands are simulated
-- **Camera**: Shows test pattern (no real camera needed)
-- **Use Case**: UI development, testing logic, debugging
+**systemd service:** See `setup_pi.sh` for an automated setup that installs a systemd unit.
 
-### Connected Mode
-- **Purpose**: Production use with real hardware
-- **Behavior**: Sends actual G-code commands to printer via serial
-- **Arduino Commands**: **SENT** - Real hardware control
-- **Camera**: Real camera stream from Raspberry Pi
-- **Use Case**: Actual printer control, production use
+---
+
+## Using the Interface
+
+- **Jog buttons** — move the nozzle in X, Y, or Z by the configured step size
+- **Home** — run G28; nozzle returns to (0, 0, 0)
+- **Emergency Stop** — sends M112 (or simulates it); all movement halts immediately
+- **Clear E-Stop** — sends M999 to restart the printer firmware, then resumes normal operation
+- **3D view** — shows real-time nozzle position within the safe-limit bounding box
+- **Camera feed** — live MJPEG stream from the HQ Camera
+
+---
 
 ## Troubleshooting
 
-### Serial permission denied
-- Add user to dialout group: `sudo usermod -a -G dialout $USER`
-- Log out and back in
-
-## Adding Custom Stepper Motor Controls
-
-This section explains how to add UI buttons that control stepper motors connected to an Arduino via USB.
-
-### Overview
-
-The system uses a three-layer architecture:
-1. **Frontend (UI)**: HTML buttons and JavaScript handlers
-2. **Server**: Flask-SocketIO event handlers
-3. **Hardware**: Serial communication with Arduino (G-code commands)
-
-### Step 1: Add UI Button
-
-Add a button to `ui/templates/index.html` in the appropriate section:
-
-```html
-<div class="control-group">
-    <h3>Stepper Motor Controls</h3>
-    <div class="control-row">
-        <button id="stepper-forward-btn" class="btn btn-primary">Move Forward</button>
-        <button id="stepper-backward-btn" class="btn btn-secondary">Move Backward</button>
-        <button id="stepper-stop-btn" class="btn btn-danger">Stop</button>
-    </div>
-</div>
+**Serial permission denied**
+```bash
+sudo usermod -a -G dialout $USER
+# then log out and back in
 ```
 
-### Step 2: Add JavaScript Handler
-
-In `ui/static/js/app.js`, add event handlers in the `bindEvents()` method:
-
-```javascript
-// Stepper motor controls
-safeBind('stepper-forward-btn', 'click', () => {
-    this.sendCommand('cmd.stepper_move', { direction: 'forward', steps: 100 });
-});
-
-safeBind('stepper-backward-btn', 'click', () => {
-    this.sendCommand('cmd.stepper_move', { direction: 'backward', steps: 100 });
-});
-
-safeBind('stepper-stop-btn', 'click', () => {
-    this.sendCommand('cmd.stepper_stop', {});
-});
+**pigpiod not running**
+```bash
+sudo systemctl start pigpiod
 ```
 
-### Step 3: Add Server-Side Handler
-
-In `server.py`, add a SocketIO event handler in the `create_app()` function:
-
-```python
-@socketio.on('cmd.stepper_move')
-def handle_stepper_move(data):
-    def execute_stepper_move():
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        try:
-            ack = loop.run_until_complete(hardware.stepper_move(
-                direction=data.get('direction', 'forward'),
-                steps=data.get('steps', 100)
-            ))
-            emit('telemetry.command_ack', {
-                'id': ack.id,
-                'status': ack.status.value,
-                'message': ack.message,
-                'timestamp': ack.timestamp
-            })
-        finally:
-            loop.close()
-    socketio.start_background_task(execute_stepper_move)
-
-@socketio.on('cmd.stepper_stop')
-def handle_stepper_stop():
-    def execute_stepper_stop():
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        try:
-            ack = loop.run_until_complete(hardware.stepper_stop())
-            emit('telemetry.command_ack', {
-                'id': ack.id,
-                'status': ack.status.value,
-                'message': ack.message,
-                'timestamp': ack.timestamp
-            })
-        finally:
-            loop.close()
-    socketio.start_background_task(execute_stepper_stop)
+**Camera not detected**
+```bash
+# Check libcamera sees the sensor
+libcamera-hello --list-cameras
+# Ensure the ribbon cable is seated firmly
 ```
 
-### Step 4: Add Hardware Method
+**Server refuses to start with "Missing required config key"**
+A required YAML key is absent. The error message names the exact path (e.g. `simulation.movement_delay`). Add it to the config file and restart.
 
-In `hw/connected_hardware.py`, add methods to the `ConnectedHardware` class:
+---
 
-```python
-async def stepper_move(self, direction: str, steps: int) -> CommandAck:
-    """Move stepper motor in specified direction."""
-    if self.emergency_stop_active:
-        return CommandAck(
-            id=f"stepper_move_{int(time.time() * 1000)}",
-            status=CommandStatus.ERROR,
-            message="Emergency stop active",
-            timestamp=time.time()
-        )
-    
-    # Send custom G-code or M-code command to Arduino
-    # Example: M100 for custom stepper control
-    # Format: M100 D<direction> S<steps>
-    direction_code = '1' if direction == 'forward' else '0'
-    gcode = f"M100 D{direction_code} S{steps}\n"
-    
-    self.printer_serial.write(gcode.encode())
-    
-    # Wait for acknowledgment
-    response = self.printer_serial.readline().decode().strip()
-    if "ok" not in response.lower():
-        return CommandAck(
-            id=f"stepper_move_{int(time.time() * 1000)}",
-            status=CommandStatus.ERROR,
-            message=f"Arduino error: {response}",
-            timestamp=time.time()
-        )
-    
-    return CommandAck(
-        id=f"stepper_move_{int(time.time() * 1000)}",
-        status=CommandStatus.OK,
-        message=f"Stepper moved {direction} {steps} steps",
-        timestamp=time.time()
-    )
+## Next Steps
 
-async def stepper_stop(self) -> CommandAck:
-    """Stop stepper motor immediately."""
-    # Send stop command
-    self.printer_serial.write(b"M101\n")  # Example stop command
-    
-    response = self.printer_serial.readline().decode().strip()
-    if "ok" not in response.lower():
-        return CommandAck(
-            id=f"stepper_stop_{int(time.time() * 1000)}",
-            status=CommandStatus.ERROR,
-            message=f"Arduino error: {response}",
-            timestamp=time.time()
-        )
-    
-    return CommandAck(
-        id=f"stepper_stop_{int(time.time() * 1000)}",
-        status=CommandStatus.OK,
-        message="Stepper stopped",
-        timestamp=time.time()
-    )
-```
+- **Network security:** Restrict SocketIO CORS to known IPs (set `ALLOWED_ORIGINS` env var), add bearer token auth to WebSocket handshake, put Nginx with HTTPS in front, or use Tailscale/WireGuard for remote access.
+- **Rate limiting:** Throttle WebSocket command events per client to prevent command flooding.
+- **User access control:** Add session-based or token-based authentication before exposing to a wider network.
 
-Also add the method to `hw/abstract_hardware.py` as an abstract method:
-
-```python
-@abstractmethod
-async def stepper_move(self, direction: str, steps: int) -> CommandAck:
-    """Move stepper motor in specified direction."""
-    pass
-
-@abstractmethod
-async def stepper_stop(self) -> CommandAck:
-    """Stop stepper motor immediately."""
-    pass
-```
-
-And implement a simulation version in `hw/test_hardware.py`:
-
-```python
-async def stepper_move(self, direction: str, steps: int) -> CommandAck:
-    """Simulate stepper motor movement."""
-    print(f"[TEST MODE] Simulating stepper move: {direction} {steps} steps")
-    await asyncio.sleep(0.1)  # Simulate movement time
-    return CommandAck(
-        id=f"stepper_move_{int(time.time() * 1000)}",
-        status=CommandStatus.OK,
-        message=f"Stepper moved {direction} {steps} steps (simulated)",
-        timestamp=time.time()
-    )
-
-async def stepper_stop(self) -> CommandAck:
-    """Simulate stepper motor stop."""
-    print("[TEST MODE] Simulating stepper stop")
-    return CommandAck(
-        id=f"stepper_stop_{int(time.time() * 1000)}",
-        status=CommandStatus.OK,
-        message="Stepper stopped (simulated)",
-        timestamp=time.time()
-    )
-```
-
-### Step 5: Arduino Firmware
-
-On your Arduino, implement handlers for the custom commands:
-
-```cpp
-// In your Arduino G-code parser
-void handle_M100() {
-    // M100 D<direction> S<steps>
-    int direction = code_seen('D') ? code_value() : 1;
-    int steps = code_seen('S') ? code_value() : 100;
-    
-    // Control your stepper motor here
-    if (direction == 1) {
-        // Move forward
-        stepper.move(steps);
-    } else {
-        // Move backward
-        stepper.move(-steps);
-    }
-    
-    Serial.println("ok");
-}
-
-void handle_M101() {
-    // Emergency stop stepper
-    stepper.stop();
-    Serial.println("ok");
-}
-```
-
-### Notes
-
-- **Serial Communication**: Commands are sent as G-code/M-code strings over USB serial
-- **Baud Rate**: Ensure Arduino firmware matches the baud rate in `config_connected.yml` (default: 115200)
-- **Command Format**: Use standard G-code format: `M###` for custom commands, `G###` for standard movements
-- **Error Handling**: Always check for `"ok"` response from Arduino before considering command successful
-- **Test Mode**: Implement simulation versions in `test_hardware.py` for testing without hardware
+For architecture details, FSM documentation, and the full API reference, see [TECHNICAL.md](TECHNICAL.md).

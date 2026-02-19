@@ -18,14 +18,10 @@ printer:
 
 # Camera configuration
 # For Arducam C-mount LN046 manual focus lens with Raspberry Pi HQ Camera
+# Focus is adjusted by physically rotating the focus ring on the lens itself.
 camera:
-  # IMPORTANT: The LN046 is a PHYSICAL manual focus lens
-  # You must adjust focus by physically rotating the focus ring on the lens itself
-  # The focus_distance setting below is for motorized focus lenses only (likely won't work for LN046)
-  focus_distance: null  # Leave as null - LN046 uses physical focus ring adjustment
-  # Image quality settings (these WILL help with blurriness)
-  sharpness: 2.0  # Sharpness level (0.0-16.0, default 1.0) - higher = sharper but may increase noise
-  jpeg_quality: 85  # JPEG compression quality (1-100, default 75) - higher = better quality but larger files
+  sharpness: 2.0  # Sharpness level (0.0-16.0, default 1.0)
+  jpeg_quality: 85  # JPEG compression quality (1-100, default 75)
 
 # Streaming
 # Higher resolution for better quality (HQ Camera supports up to 4056x3040)
