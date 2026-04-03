@@ -2,10 +2,50 @@
 """
 Standalone script to test USB-C connection to Anycubic Kobra 2 Neo printer.
 
+=============================================================================
+DEVELOPMENT WORKFLOW & SETUP (Mac to Raspberry Pi)
+=============================================================================
+
+1. Mount the Remote Pi Directory:
+   Mount the Raspberry Pi's autolab directory locally via Tailscale/SSH:
+   sshfs -o reconnect,ServerAliveInterval=15,ServerAliveCountMax=3 -o volname="Pi-Autolab" pi@100.72.164.72:/home/pi/autolab ~/pi-autolab
+
+2. Sync Files (Optional):
+   To copy the mounted files to your local Documents folder for backup/editing:
+   rsync -av \\
+       --exclude='.git' \\
+       --exclude='__pycache__' \\
+       --exclude='.DS_Store' \\
+       --exclude='*.pyc' \\
+       --exclude='myenv/' \\
+       /Users/prarthanghosh/pi-autolab/ \\
+       /Users/prarthanghosh/Documents/Neurotech/
+
+3. Environment & Packages:
+   Activate your conda environment and install the required serial package:
+   conda activate auto_lab_env
+   pip install pyserial
+
+4. Discovering the Printer (Mac Terminal):
+   If you need to manually find the printer's serial port, run:
+   ls /dev/tty.* # or
+   ls /dev/cu.*
+   # Look for devices named like /dev/tty.usbserial-XXXX or /dev/tty.usbmodemXXXX
+
+=============================================================================
+WHAT TO EXPECT WHEN RUNNING
+=============================================================================
+- Initialization: The printer will likely reset (reboot) when the script opens the port. The script waits 3 seconds for this.
+- Terminal Output: You will see firmware details (Marlin), temperature readings, current XYZ coordinates, and endstop states.
+- Physical Action: At the end of the test (Test 6), the printer's part cooling fan will audibly spin up to 50% speed for 1.5 seconds and then turn completely off.
+
+=============================================================================
+SCRIPT DETAILS
+=============================================================================
 This script tests basic communication with the printer by:
 1. Connecting to the serial port
 2. Waiting for printer initialization
-3. Sending test commands (M115, M105)
+3. Sending test commands (M115, M105, M114, M119, M106/M107)
 4. Verifying responses
 
 Usage:
@@ -146,7 +186,6 @@ def test_connection(ser: serial.Serial) -> bool:
     success, response = send_gcode(ser, "M115", timeout=3.0)
     if success:
         print("  ✓ Firmware info received")
-        # Try to extract firmware name
         if 'Marlin' in response or 'firmware' in response.lower():
             print("  ✓ Detected Marlin firmware")
     else:
@@ -158,7 +197,6 @@ def test_connection(ser: serial.Serial) -> bool:
     success, response = send_gcode(ser, "M105", timeout=3.0)
     if success:
         print("  ✓ Temperature query successful")
-        # Try to parse temperature
         import re
         temp_match = re.search(r'T:([\d.]+)', response)
         bed_match = re.search(r'B:([\d.]+)', response)
@@ -183,7 +221,6 @@ def test_connection(ser: serial.Serial) -> bool:
     success, response = send_gcode(ser, "M114", timeout=3.0)
     if success:
         print("  ✓ Position query successful")
-        # Try to parse position
         import re
         pos_match = re.search(r'X:([\d.-]+)\s+Y:([\d.-]+)\s+Z:([\d.-]+)', response)
         if pos_match:
@@ -192,7 +229,35 @@ def test_connection(ser: serial.Serial) -> bool:
     else:
         print(f"  ✗ Failed: {response}")
         all_passed = False
-    
+
+    # Test 5: Check Endstops and Inductive Probe (M119)
+    print("\n[Test 5] Checking endstops and probe (M119)...")
+    success, response = send_gcode(ser, "M119", timeout=3.0)
+    if success:
+        print("  ✓ Endstop query successful")
+        if 'x_min' in response.lower() or 'z_min' in response.lower():
+            print("  ✓ Endstop states received")
+    else:
+        print(f"  ✗ Failed: {response}")
+        all_passed = False
+
+    # Test 6: Test Part Cooling Fan (M106 / M107)
+    print("\n[Test 6] Testing part cooling fan...")
+    print("  Turning fan ON to 50% (M106 S128)")
+    success1, response1 = send_gcode(ser, "M106 S128", timeout=2.0)
+    if success1:
+        time.sleep(1.5) # Wait 1.5 seconds to allow the fan to spin up audibly
+        print("  Turning fan OFF (M107)")
+        success2, response2 = send_gcode(ser, "M107", timeout=2.0)
+        if success2:
+            print("  ✓ Fan test successful")
+        else:
+            print(f"  ✗ Failed to turn fan off: {response2}")
+            all_passed = False
+    else:
+        print(f"  ✗ Failed to turn fan on: {response1}")
+        all_passed = False
+        
     return all_passed
 
 
