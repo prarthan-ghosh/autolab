@@ -25,7 +25,7 @@ from fastapi import Request
 import socketio
 
 from hw.hardware_factory import create_hardware
-from hw.abstract_hardware import CommandStatus, validate_coordinates
+from hw.abstract_hardware import CommandAck, CommandStatus, validate_coordinates
 
 logging.basicConfig(level=logging.INFO, format='%(levelname)s %(name)s: %(message)s')
 logger = logging.getLogger(__name__)
@@ -304,13 +304,22 @@ async def capture():
 
 @fastapi_app.get('/config')
 async def get_config():
-    """Return printer safe limits and settings for 3D visualization."""
+    """Return printer safe limits, physical dimensions, and settings for 3D visualization."""
     limits = config['printer']['safe_limits']
+    physical = config['printer'].get('physical', {})
     return {
+        # Safe limits
         'x_min': limits['x_min'], 'x_max': limits['x_max'],
         'y_min': limits['y_min'], 'y_max': limits['y_max'],
         'z_min': limits['z_min'], 'z_max': limits['z_max'],
         'move_feedrate_default': config['printer']['move_feedrate_default'],
+        # Physical dimensions
+        'bed_width': physical.get('bed_width', 230),
+        'bed_depth': physical.get('bed_depth', 230),
+        'frame_width': physical.get('frame_width', 350),
+        'frame_depth': physical.get('frame_depth', 300),
+        'frame_height': physical.get('frame_height', 400),
+        'gantry_width': physical.get('gantry_width', 300),
     }
 
 
@@ -371,6 +380,21 @@ async def connect(sid, environ):
         _telemetry_task = asyncio.create_task(telemetry_loop())
     await sio.emit('status', {'mode': mode, 'connected': True}, to=sid)
 
+    # Send current telemetry immediately so the client doesn't flash (0,0,0)
+    try:
+        telemetry = await hardware.get_telemetry()
+        await sio.emit('telemetry.position', {
+            'timestamp': telemetry.timestamp,
+            'nozzle': {
+                'x': telemetry.nozzle.x,
+                'y': telemetry.nozzle.y,
+                'z': telemetry.nozzle.z,
+            },
+            'status': telemetry.status.value,
+        }, to=sid)
+    except Exception as e:
+        logger.error(f"Failed to send initial telemetry: {e}")
+
 
 @sio.event
 async def disconnect(sid):
@@ -428,6 +452,20 @@ async def handle_home_nozzle(sid, data=None):
     await sio.emit('telemetry.command_ack', _ack_dict(ack), to=sid)
 
 
+@sio.on('cmd.clear_error')
+async def handle_clear_error(sid, data=None):
+    try:
+        await hardware.clear_error()
+        await sio.emit('telemetry.command_ack', _ack_dict(CommandAck(
+            id=f"clear_error_{int(time.time() * 1000)}",
+            status=CommandStatus.OK,
+            message="Error cleared",
+            timestamp=time.time(),
+        )), to=sid)
+    except Exception as e:
+        await sio.emit('telemetry.command_ack', _error_ack(str(e)), to=sid)
+
+
 @sio.on('cmd.emergency_stop')
 async def handle_emergency_stop(sid, data=None):
     ack = await hardware.emergency_stop()
@@ -458,16 +496,6 @@ def main():
     parser.add_argument('--port', type=int, default=5000, help='Port to run server on')
     parser.add_argument('--host', default='0.0.0.0', help='Host to bind server to')
     args = parser.parse_args()
-
-    # Require SECRET_KEY in environment (security baseline)
-    secret_key = os.environ.get('SECRET_KEY')
-    if not secret_key:
-        print(
-            "ERROR: SECRET_KEY environment variable not set. "
-            "Set it before starting the server.",
-            file=sys.stderr,
-        )
-        sys.exit(1)
 
     mode = args.mode
     config = load_config(args.config or f'config_{mode}.yml')

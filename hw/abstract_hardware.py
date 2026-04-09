@@ -112,7 +112,8 @@ class HardwareInterface(ABC):
         {'trigger': 'begin_homing',    'source': 'idle',                       'dest': 'homing'},
         {'trigger': 'complete_homing', 'source': 'homing',                     'dest': 'idle'},
         {'trigger': 'fail_homing',     'source': 'homing',                     'dest': 'error'},
-        {'trigger': 'trigger_estop',   'source': ['idle', 'moving', 'homing'], 'dest': 'emergency_stop'},
+        {'trigger': 'trigger_estop',   'source': ['idle', 'moving', 'homing', 'error'], 'dest': 'emergency_stop'},
+        {'trigger': 'trigger_estop',   'source': 'emergency_stop',             'dest': None},  # no-op: re-pressing e-stop is safe
         {'trigger': 'clear_estop',     'source': 'emergency_stop',             'dest': 'idle'},
         {'trigger': 'clear_error',     'source': 'error',                      'dest': 'idle'},
     ]

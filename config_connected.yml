@@ -6,14 +6,24 @@ printer:
   baud_rate: 115200
   # If your printer has Y and Z axes physically swapped (Y button moves Z motor, etc.),
   # set this to true to swap them in G-code commands
-  swap_yz_axes: true  # Set to true if Y and Z are swapped on your printer
+  swap_yz_axes: false  # Standard Kobra 2 Neo axis layout (Y=bed, Z=gantry)
+  # Physical machine dimensions (actual hardware measurements, used for visualization)
+  physical:
+    bed_width: 230      # mm (X) - full PEI plate
+    bed_depth: 230      # mm (Y) - full PEI plate
+    frame_width: 350    # mm - X span between uprights
+    frame_depth: 300    # mm - Y depth of base
+    frame_height: 400   # mm - upright height
+    gantry_width: 300   # mm - X-gantry bar length
+
+  # Software-enforced safe movement limits (nozzle will not move outside these)
   safe_limits:
-    x_min: 0.0  # mm
-    x_max: 220.0  # mm
-    y_min: 0.0  # mm
-    y_max: 220.0  # mm
-    z_min: 0.0  # mm
-    z_max: 250.0  # mm
+    x_min: 5.0   # mm - margin from left edge
+    x_max: 215.0 # mm - margin from right edge
+    y_min: 5.0   # mm - margin from front edge
+    y_max: 215.0 # mm - margin from back edge
+    z_min: 0.0   # mm - bed level
+    z_max: 245.0 # mm - below top of frame
   move_feedrate_default: 1500  # mm/min
 
 # Camera configuration

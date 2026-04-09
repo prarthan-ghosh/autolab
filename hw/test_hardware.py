@@ -28,17 +28,6 @@ class TestHardware(HardwareInterface):
     async def initialize(self) -> bool:
         """Initialize test hardware simulation."""
         print("Initializing test hardware simulation (no G-code will be sent)...", flush=True)
-
-        print("Homing nozzle to origin (0, 0, 0)...", flush=True)
-        try:
-            ack = await self.home_nozzle()
-            if ack.status != CommandStatus.OK:
-                print(f"Warning: Homing failed: {ack.message}", flush=True)
-            else:
-                print("Nozzle homed successfully", flush=True)
-        except Exception as e:
-            print(f"Warning: Homing error (continuing anyway): {e}", flush=True)
-
         return True
 
     async def shutdown(self) -> bool:
@@ -78,6 +67,7 @@ class TestHardware(HardwareInterface):
         movement_delay = self.config['simulation']['movement_delay']
         steps = max(1, int(move_time * 10))  # ~10 position updates per second
 
+        start = Position(self.nozzle_pos.x, self.nozzle_pos.y, self.nozzle_pos.z)
         for i in range(steps):
             if self.state == 'emergency_stop':
                 # E-stop was triggered externally during movement
@@ -89,9 +79,9 @@ class TestHardware(HardwareInterface):
                 )
 
             progress = (i + 1) / steps
-            self.nozzle_pos.x = self.nozzle_pos.x + (x - self.nozzle_pos.x) * progress
-            self.nozzle_pos.y = self.nozzle_pos.y + (y - self.nozzle_pos.y) * progress
-            self.nozzle_pos.z = self.nozzle_pos.z + (z - self.nozzle_pos.z) * progress
+            self.nozzle_pos.x = start.x + (x - start.x) * progress
+            self.nozzle_pos.y = start.y + (y - start.y) * progress
+            self.nozzle_pos.z = start.z + (z - start.z) * progress
             await asyncio.sleep(movement_delay)
 
         await self.complete_move()
@@ -145,11 +135,12 @@ class TestHardware(HardwareInterface):
             move_time = (distance / default_feedrate) * 60
             steps = max(1, int(move_time * 10))
 
+            start = Position(self.nozzle_pos.x, self.nozzle_pos.y, self.nozzle_pos.z)
             for i in range(steps):
                 progress = (i + 1) / steps
-                self.nozzle_pos.x = self.nozzle_pos.x * (1 - progress)
-                self.nozzle_pos.y = self.nozzle_pos.y * (1 - progress)
-                self.nozzle_pos.z = self.nozzle_pos.z * (1 - progress)
+                self.nozzle_pos.x = start.x * (1 - progress)
+                self.nozzle_pos.y = start.y * (1 - progress)
+                self.nozzle_pos.z = start.z * (1 - progress)
                 await asyncio.sleep(movement_delay)
 
             self.nozzle_pos = Position(0.0, 0.0, 0.0)

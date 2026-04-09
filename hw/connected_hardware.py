@@ -57,15 +57,6 @@ class ConnectedHardware(HardwareInterface):
         if ack1.status != CommandStatus.OK or ack2.status != CommandStatus.OK:
             print(f"WARNING: Failed to set safe modes. G21: {ack1.status}, G90: {ack2.status}")
 
-        # Home nozzle on startup
-        print("\nHoming nozzle to origin (0, 0, 0)...")
-        print("(This may take 30-60 seconds - please wait...)")
-        ack = await self.home_nozzle()
-        if ack.status != CommandStatus.OK:
-            print(f"WARNING: Homing failed during initialization: {ack.message}")
-        else:
-            print("Nozzle homed successfully")
-
         return True
 
     async def shutdown(self) -> bool:

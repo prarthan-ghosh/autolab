@@ -253,6 +253,11 @@ class PrinterInterface {
             this.emergencyStop();
         });
         
+        // Clear error
+        safeBind('clear-error-btn', 'click', () => {
+            this.sendCommand('cmd.clear_error', {});
+        });
+
         // Camera capture
         safeBind('capture-btn', 'click', () => {
             this.captureImage();
@@ -432,7 +437,7 @@ class PrinterInterface {
         // Check if this is a movement command
         const isMovementCommand = command.startsWith('cmd.move_') || command === 'cmd.home_nozzle';
         if (isMovementCommand && this.moving) {
-            alert('Movement in progress. Please wait for the current movement to complete.');
+            console.log('Movement in progress — command dropped:', command);
             return;
         }
         
@@ -713,98 +718,233 @@ class PrinterInterface {
         console.log('Container computed style:', window.getComputedStyle(container).display);
         
         // Add lights
-        const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
         this.scene.add(ambientLight);
-        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.4);
-        directionalLight.position.set(1, 1, 1);
-        this.scene.add(directionalLight);
-        
-        // Draw workspace bounds (wireframe box)
-        // Coordinate mapping: Printer (X, Y, Z) -> Three.js (x, -z, y)
-        // Origin (0,0,0) is at front-left-bottom corner
-        
-        console.log('Creating wireframe box:', { workspaceWidth, workspaceHeight, workspaceDepth });
-        
-        // Create box geometry: width (X), height (Z), depth (Y)
-        // In Three.js: x=width, y=height, z=depth
-        // Mapping: Printer X->x, Printer Z->y, Printer Y->z (negated)
-        const workspaceGeometry = new THREE.BoxGeometry(workspaceWidth, workspaceHeight, workspaceDepth);
-        const workspaceEdges = new THREE.EdgesGeometry(workspaceGeometry);
-        const workspaceMaterial = new THREE.LineBasicMaterial({ 
-            color: 0x0000ff,  // Blue wireframe for workspace bounds
-            linewidth: 2,
-            linecap: 'round',
-            linejoin: 'round'
-        });
-        this.workspaceBox = new THREE.LineSegments(workspaceEdges, workspaceMaterial);
-        
-        // Position box so it represents the workspace bounds
-        // Box center should be at the workspace center in Three.js coordinates
-        const boxPosX = this.config.x_min + workspaceWidth / 2;
-        const boxPosY = this.config.z_min + workspaceHeight / 2;  // Printer Z -> Three.js Y
-        const boxPosZ = -(this.config.y_min + workspaceDepth / 2); // Printer Y -> Three.js -Z
-        this.workspaceBox.position.set(boxPosX, boxPosY, boxPosZ);
-        console.log('Wireframe box positioned at:', { x: boxPosX, y: boxPosY, z: boxPosZ });
+        const dirLight1 = new THREE.DirectionalLight(0xffffff, 0.4);
+        dirLight1.position.set(1, 1.5, 1);
+        this.scene.add(dirLight1);
+        const dirLight2 = new THREE.DirectionalLight(0xffffff, 0.2);
+        dirLight2.position.set(-1, 0.5, -1);
+        this.scene.add(dirLight2);
+
+        // ============================================================
+        // 3D Printer Model (Anycubic Kobra 2 Neo schematic)
+        // Coordinate mapping: Printer (X, Y, Z) -> Three.js (x, y, -z)
+        //   Printer X -> Three.js x (left/right)
+        //   Printer Z -> Three.js y (up/down, gantry height)
+        //   Printer Y -> Three.js -z (bed front/back)
+        // Origin (0,0,0) = front-left, nozzle at bed level
+        // ============================================================
+
+        // Helper to create a box mesh
+        const makeBox = (w, h, d, color, opacity) => {
+            const mat = new THREE.MeshPhongMaterial({
+                color,
+                transparent: opacity < 1,
+                opacity,
+                flatShading: true,
+            });
+            return new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+        };
+
+        // --- Frame dimensions from config (physical machine measurements) ---
+        const frameW = this.config.frame_width || 350;   // X span between uprights
+        const frameD = this.config.frame_depth || 300;    // Z (depth) span of base
+        const frameH = this.config.frame_height || 400;   // total upright height
+        const gantryW = this.config.gantry_width || 300;  // X-gantry bar length
+        const bedW = this.config.bed_width || 230;        // physical bed X
+        const bedD = this.config.bed_depth || 230;        // physical bed Y
+        const extrusion = 20; // aluminum extrusion cross-section
+
+        // Offsets: center the build volume within the frame
+        const buildCenterX = workspaceWidth / 2;
+        const buildCenterZ = -(workspaceDepth / 2);
+        const frameCenterX = buildCenterX;
+        const frameCenterZ = buildCenterZ;
+
+        // --- Static frame ---
+        const frameGroup = new THREE.Group();
+        const frameMat = 0x404040;
+
+        // Left upright
+        const leftUpright = makeBox(extrusion, frameH, extrusion, frameMat, 1);
+        leftUpright.position.set(frameCenterX - frameW / 2, frameH / 2, frameCenterZ + frameD / 2);
+        frameGroup.add(leftUpright);
+
+        // Right upright
+        const rightUpright = makeBox(extrusion, frameH, extrusion, frameMat, 1);
+        rightUpright.position.set(frameCenterX + frameW / 2, frameH / 2, frameCenterZ + frameD / 2);
+        frameGroup.add(rightUpright);
+
+        // Top crossbar
+        const topBar = makeBox(frameW + extrusion, extrusion, extrusion, frameMat, 1);
+        topBar.position.set(frameCenterX, frameH, frameCenterZ + frameD / 2);
+        frameGroup.add(topBar);
+
+        // Base bars (front and back)
+        const baseFront = makeBox(frameW + extrusion, extrusion, extrusion, 0x505050, 1);
+        baseFront.position.set(frameCenterX, extrusion / 2, frameCenterZ + frameD / 2);
+        frameGroup.add(baseFront);
+
+        const baseBack = makeBox(frameW + extrusion, extrusion, extrusion, 0x505050, 1);
+        baseBack.position.set(frameCenterX, extrusion / 2, frameCenterZ - frameD / 2);
+        frameGroup.add(baseBack);
+
+        // Base bars (left and right side rails for bed)
+        const baseLeft = makeBox(extrusion, extrusion, frameD, 0x505050, 1);
+        baseLeft.position.set(frameCenterX - frameW / 2, extrusion / 2, frameCenterZ);
+        frameGroup.add(baseLeft);
+
+        const baseRight = makeBox(extrusion, extrusion, frameD, 0x505050, 1);
+        baseRight.position.set(frameCenterX + frameW / 2, extrusion / 2, frameCenterZ);
+        frameGroup.add(baseRight);
+
+        // Leadscrew (thin cylinder on left upright)
+        const leadscrewGeo = new THREE.CylinderGeometry(3, 3, frameH - extrusion, 8);
+        const leadscrewMat = new THREE.MeshPhongMaterial({ color: 0x999999 });
+        const leadscrew = new THREE.Mesh(leadscrewGeo, leadscrewMat);
+        leadscrew.position.set(frameCenterX - frameW / 2 + extrusion, frameH / 2, frameCenterZ + frameD / 2);
+        frameGroup.add(leadscrew);
+
+        this.scene.add(frameGroup);
+
+        // --- Bed (moves in printer Y → Three.js -Z) ---
+        // Three layers: (1) fake table plane, (2) physical PEI bed, (3) virtual safe-limit overlay
+        // bedGroup origin: world z = buildCenterZ (center of safe area) at printer Y=0
+        // All children positioned in local coords relative to that center.
+        this.bedGroup = new THREE.Group();
+
+        // Local Z offset: physical bed center vs safe area center
+        const safeW = this.config.x_max - this.config.x_min;
+        const safeD = this.config.y_max - this.config.y_min;
+        const physBedLocalZ = -(bedD / 2) + (safeD / 2);  // offset from safe-center to bed-center
+        const physBedCenterX = bedW / 2;  // physical bed starts at X=0
+
+        // Layer 1: Fake table plane (large bright surface for spatial context)
+        const tablePlane = makeBox(600, 2, 600, 0xe8dcc8, 1);
+        tablePlane.position.set(physBedCenterX, extrusion - 2, physBedLocalZ);
+        this.bedGroup.add(tablePlane);
+
+        // Layer 2: Physical bed plate (PEI spring steel)
+        const bedPlate = makeBox(bedW, 4, bedD, 0x333333, 1);
+        bedPlate.position.set(physBedCenterX, extrusion + 1, physBedLocalZ);
+        this.bedGroup.add(bedPlate);
+
+        // Grid on the physical bed
+        const gridSize = Math.max(bedW, bedD);
+        const gridHelper = new THREE.GridHelper(gridSize, 10, 0x555555, 0x777777);
+        gridHelper.position.set(physBedCenterX, extrusion + 3.5, physBedLocalZ);
+        this.bedGroup.add(gridHelper);
+
+        // Layer 3: Virtual safe-limit overlay (semi-transparent green)
+        const safeLimitPlane = new THREE.Mesh(
+            new THREE.PlaneGeometry(safeW, safeD),
+            new THREE.MeshBasicMaterial({ color: 0x00cc44, transparent: true, opacity: 0.15, side: THREE.DoubleSide })
+        );
+        safeLimitPlane.rotation.x = -Math.PI / 2;
+        // Safe area center in local coords: X = x_min + safeW/2, Z = -(y_min + safeD/2) + safeD/2 = -y_min
+        const safeLocalX = this.config.x_min + safeW / 2;
+        const safeLocalZ = -this.config.y_min;  // relative to buildCenterZ offset
+        safeLimitPlane.position.set(safeLocalX, extrusion + 4, safeLocalZ);
+        this.bedGroup.add(safeLimitPlane);
+
+        // Safe-limit border (solid green outline)
+        const borderShape = new THREE.BufferGeometry();
+        const bx1 = this.config.x_min, bx2 = this.config.x_max;
+        const bz1 = -this.config.y_min + (safeD / 2), bz2 = -this.config.y_max + (safeD / 2);
+        const by = extrusion + 4.1;
+        borderShape.setAttribute('position', new THREE.Float32BufferAttribute([
+            bx1, by, bz1,  bx2, by, bz1,
+            bx2, by, bz1,  bx2, by, bz2,
+            bx2, by, bz2,  bx1, by, bz2,
+            bx1, by, bz2,  bx1, by, bz1,
+        ], 3));
+        const borderLine = new THREE.LineSegments(borderShape, new THREE.LineBasicMaterial({ color: 0x00cc44, linewidth: 2 }));
+        this.bedGroup.add(borderLine);
+
+        this.bedGroup.position.z = buildCenterZ; // initial Y=0 position
+        this.scene.add(this.bedGroup);
+
+        // --- X-Gantry (moves in printer Z → Three.js Y) ---
+        this.gantryGroup = new THREE.Group();
+
+        // Gantry bar (horizontal rod)
+        const gantryBar = makeBox(gantryW, 15, 15, 0x555555, 1);
+        gantryBar.position.set(frameCenterX, 0, frameCenterZ + frameD / 2);
+        this.gantryGroup.add(gantryBar);
+
+        // Gantry side brackets
+        const bracketL = makeBox(extrusion, 30, 25, 0x484848, 1);
+        bracketL.position.set(frameCenterX - frameW / 2 + extrusion / 2, 0, frameCenterZ + frameD / 2);
+        this.gantryGroup.add(bracketL);
+
+        const bracketR = makeBox(extrusion, 30, 25, 0x484848, 1);
+        bracketR.position.set(frameCenterX + frameW / 2 - extrusion / 2, 0, frameCenterZ + frameD / 2);
+        this.gantryGroup.add(bracketR);
+
+        // --- Printhead on the gantry (moves in printer X → Three.js X) ---
+        this.printheadGroup = new THREE.Group();
+
+        // Carriage body
+        const carriage = makeBox(35, 40, 35, 0x222222, 1);
+        carriage.position.set(0, -5, frameCenterZ + frameD / 2);
+        this.printheadGroup.add(carriage);
+
+        // Heatsink fins
+        const heatsink = makeBox(28, 15, 28, 0x888888, 1);
+        heatsink.position.set(0, -30, frameCenterZ + frameD / 2);
+        this.printheadGroup.add(heatsink);
+
+        // Nozzle (cone)
+        const nozzleGeo = new THREE.ConeGeometry(4, 12, 8);
+        const nozzleMat = new THREE.MeshPhongMaterial({ color: 0xcc4400 });
+        this.nozzleMarker = new THREE.Mesh(nozzleGeo, nozzleMat);
+        this.nozzleMarker.position.set(0, -44, frameCenterZ + frameD / 2);
+        this.printheadGroup.add(this.nozzleMarker);
+
+        // Nozzle tip indicator (small bright sphere for visibility)
+        const tipGeo = new THREE.SphereGeometry(3, 12, 8);
+        const tipMat = new THREE.MeshBasicMaterial({ color: 0xff3300 });
+        this.nozzleTip = new THREE.Mesh(tipGeo, tipMat);
+        this.nozzleTip.position.set(0, -50, frameCenterZ + frameD / 2);
+        this.printheadGroup.add(this.nozzleTip);
+
+        this.printheadGroup.position.x = 0; // initial X=0
+        this.gantryGroup.add(this.printheadGroup);
+
+        // Gantry initial position: printer Z=0 → just above bed
+        this.gantryGroup.position.y = extrusion + 5 + 50; // nozzle tip at bed level
+        this.scene.add(this.gantryGroup);
+
+        // Store the gantry Y offset so nozzle tip touches bed at Z=0
+        this._gantryBaseY = extrusion + 5 + 50;
+
+        // --- Build volume wireframe (subtle) ---
+        const volGeo = new THREE.BoxGeometry(workspaceWidth, workspaceHeight, workspaceDepth);
+        const volEdges = new THREE.EdgesGeometry(volGeo);
+        const volMat = new THREE.LineBasicMaterial({ color: 0x4488ff, transparent: true, opacity: 0.2 });
+        this.workspaceBox = new THREE.LineSegments(volEdges, volMat);
+        this.workspaceBox.position.set(
+            buildCenterX,
+            extrusion + 5 + workspaceHeight / 2,
+            buildCenterZ
+        );
         this.scene.add(this.workspaceBox);
-        
-        // Add GridHelper to represent the bed (XY plane at Z=0)
-        // GridHelper by default lies in the XZ plane (horizontal floor)
-        // In our coordinate mapping: Printer (X, Y, Z) -> Three.js (x, -z, y)
-        // So printer XY plane (bed) maps to Three.js XZ plane (which GridHelper uses by default)
-        const gridSize = Math.max(workspaceWidth, workspaceDepth); // Use X and Y dimensions
-        const gridDivisions = 10; // Reduced from 20 for better performance
-        const gridHelper = new THREE.GridHelper(gridSize, gridDivisions, 0x888888, 0xcccccc);
-        // Position grid at bed level (printer Z=0)
-        // In Three.js: X = printer X, Y = printer Z, Z = -printer Y
-        // Bed is at printer Z=0, so Three.js Y = 0 (which is z_min)
-        gridHelper.position.set(
-            this.config.x_min + workspaceWidth / 2,  // Center in X
-            this.config.z_min,  // Bed is at printer Z=0 -> Three.js Y=z_min
-            -(this.config.y_min + workspaceDepth / 2)  // Center in Z (negated Y)
-        );
-        // No rotation needed - GridHelper already lies in XZ plane (horizontal)
-        this.scene.add(gridHelper);
-        
-        // Add axes helper at origin (0, 0, 0)
-        const axesSize = Math.max(workspaceWidth, workspaceHeight, workspaceDepth) * 0.3;
-        const axesHelper = new THREE.AxesHelper(axesSize);
-        // Position at origin: Printer (0,0,0) -> Three.js (x_min, z_min, -y_min)
-        axesHelper.position.set(
-            this.config.x_min,   // X: printer X=0 -> Three.js x=0
-            this.config.z_min,   // Y: printer Z=0 -> Three.js y=0
-            -this.config.y_min   // Z: printer Y=0 -> Three.js z=0 (negated)
-        );
-        this.scene.add(axesHelper);
-        
-        // Add origin marker (green sphere at 0,0,0) - this is the homed position
-        // The origin corresponds to where the nozzle moves to when homed
-        const originGeometry = new THREE.SphereGeometry(4, 16, 12);  // Green dot size
-        const originMaterial = new THREE.MeshBasicMaterial({ 
-            color: 0x00ff00,
-            transparent: true,
-            opacity: 0.8
-        });
-        const originMarker = new THREE.Mesh(originGeometry, originMaterial);
-        // Position at origin: Printer (0,0,0) -> Three.js (x_min, z_min, -y_min)
-        originMarker.position.set(
-            this.config.x_min,   // X: printer X=0 -> Three.js x=x_min
-            this.config.z_min,   // Y: printer Z=0 -> Three.js y=z_min
-            -this.config.y_min   // Z: printer Y=0 -> Three.js z=-y_min (negated)
-        );
+
+        // --- Origin marker (small green sphere at 0,0,0 = front-left, bed level) ---
+        const originGeo = new THREE.SphereGeometry(3, 12, 8);
+        const originMat = new THREE.MeshBasicMaterial({ color: 0x00ff00, transparent: true, opacity: 0.8 });
+        const originMarker = new THREE.Mesh(originGeo, originMat);
+        originMarker.position.set(0, extrusion + 6, 0);
         this.scene.add(originMarker);
-        console.log('Origin marker (green sphere) added at:', originMarker.position);
-        
-        // Create nozzle marker (red sphere) - make it bigger than green dot
-        const nozzleGeometry = new THREE.SphereGeometry(6, 16, 12);  // Red dot is bigger (6 vs 4)
-        const nozzleMaterial = new THREE.MeshBasicMaterial({ 
-            color: 0xff0000,
-            transparent: true,
-            opacity: 0.9
-        });
-        this.nozzleMarker = new THREE.Mesh(nozzleGeometry, nozzleMaterial);
-        this.scene.add(this.nozzleMarker);
-        
-        // Add dimension labels to wireframe corners
+
+        // --- Axes helper at origin ---
+        const axesSize = Math.max(workspaceWidth, workspaceHeight, workspaceDepth) * 0.25;
+        const axesHelper = new THREE.AxesHelper(axesSize);
+        axesHelper.position.set(0, extrusion + 6, 0);
+        this.scene.add(axesHelper);
+
+        // Add dimension labels
         this.addDimensionLabels(workspaceWidth, workspaceHeight, workspaceDepth);
         
         // Handle window resize
@@ -1064,34 +1204,35 @@ class PrinterInterface {
     }
     
     updateVisualization() {
-        if (!this.nozzleMarker || !this.renderer || !this.scene || !this.camera) {
-            console.warn('Cannot update visualization - missing components', {
-                nozzleMarker: !!this.nozzleMarker,
-                renderer: !!this.renderer,
-                scene: !!this.scene,
-                camera: !!this.camera
-            });
+        if (!this.renderer || !this.scene || !this.camera) {
             return;
         }
-        
-        // Update nozzle marker position
-        // Coordinate mapping: Printer (X, Y, Z) -> Three.js (x, -z, y)
-        // Origin (homed position) is at printer (x_min, y_min, z_min) = (0, 0, 0)
-        // So we offset by those values to position relative to the origin
-        const newX = this.config.x_min + this.currentPosition.x;
-        const newY = this.config.z_min + this.currentPosition.z;
-        const newZ = -(this.config.y_min + this.currentPosition.y);
-        
-        this.nozzleMarker.position.set(newX, newY, newZ);
-        
-        console.log('Updated nozzle marker position:', { x: newX, y: newY, z: newZ, currentPos: this.currentPosition });
-        
-        // Force immediate render to ensure update is visible
+
+        // Coordinate mapping: Printer (X, Y, Z) -> Three.js (x, y, -z)
+        const px = this.currentPosition.x;
+        const py = this.currentPosition.y;
+        const pz = this.currentPosition.z;
+
+        // Bed moves in printer Y → Three.js -Z
+        if (this.bedGroup) {
+            const buildCenterZ = -((this.config.y_max - this.config.y_min) / 2);
+            this.bedGroup.position.z = buildCenterZ - py;
+        }
+
+        // Gantry moves in printer Z → Three.js Y
+        if (this.gantryGroup) {
+            this.gantryGroup.position.y = (this._gantryBaseY || 75) + pz;
+        }
+
+        // Printhead moves in printer X → Three.js X
+        if (this.printheadGroup) {
+            this.printheadGroup.position.x = px;
+        }
+
+        // Force immediate render
         if (this.renderer && this.scene && this.camera) {
             this.renderer.render(this.scene, this.camera);
         }
-        
-        // Also request render for animation loop
         this.requestRender();
     }
     
@@ -1166,6 +1307,12 @@ class PrinterInterface {
         const statusElement = document.getElementById('system-status');
         statusElement.textContent = this.systemStatus.charAt(0).toUpperCase() + this.systemStatus.slice(1);
         statusElement.className = `status-${this.systemStatus}`;
+
+        // Show/hide clear error button
+        const errorGroup = document.getElementById('error-recovery-group');
+        if (errorGroup) {
+            errorGroup.style.display = this.systemStatus === 'error' ? 'block' : 'none';
+        }
     }
     
     updateLastCommand() {

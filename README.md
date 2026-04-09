@@ -9,7 +9,6 @@ A web-based interface for controlling a 3D printer gantry with live camera monit
 - Raspberry Pi 4 (or later)
 - Raspberry Pi HQ Camera (IMX477) with Arducam C-mount LN046 manual focus lens
 - Anycubic Kobra 2 Neo (or any Marlin-based printer) connected via USB
-- GPIO wiring: momentary button between GPIO 27 and GND for hardware e-stop
 
 ---
 
@@ -25,10 +24,7 @@ pip install -r requirements.txt
 
 # 3. Install system packages (Raspberry Pi only)
 sudo apt update
-sudo apt install -y python3-picamera2 python3-libcamera pigpio
-
-# 4. Start pigpio daemon (required for GPIO e-stop)
-sudo systemctl enable --now pigpiod
+sudo apt install -y python3-picamera2 python3-libcamera
 ```
 
 ---
@@ -47,7 +43,6 @@ Key sections:
 - **`printer`** — serial device path, baud rate, axis swap, safe movement limits, default feedrate
 - **`camera`** — sharpness and JPEG quality (focus is set physically on the lens)
 - **`stream`** — preview resolution and frame rate
-- **`emergency_stop`** — GPIO pin number
 - **`simulation`** — `movement_delay` (test mode only, controls interpolation speed)
 
 ---
@@ -57,16 +52,12 @@ Key sections:
 **Test mode** (simulation, no hardware required):
 
 ```bash
-export SECRET_KEY=change_me_in_production
 python server.py --mode test
-# or via uvicorn directly:
-SECRET_KEY=dev python -m uvicorn server:app --port 5000
 ```
 
 **Connected mode** (real hardware):
 
 ```bash
-export SECRET_KEY=change_me_in_production
 python server.py --mode connected
 ```
 
@@ -134,11 +125,6 @@ http://100.72.164.72:5000
 ```bash
 sudo usermod -a -G dialout $USER
 # then log out and back in
-```
-
-**pigpiod not running**
-```bash
-sudo systemctl start pigpiod
 ```
 
 **Camera not detected**
