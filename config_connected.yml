@@ -30,6 +30,3 @@ stream:
   preview_height: 1080  # px (increased for better quality)
   preview_fps: 15  # fps (reduced slightly for higher resolution)
 
-# Safety / operational
-emergency_stop:
-  gpio_pin: 27  # GPIO pin for emergency stop button

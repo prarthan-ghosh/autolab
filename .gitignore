@@ -55,3 +55,9 @@ htmlcov/
 # Temporary files
 *.tmp
 *.bak
+
+# macOS resource fork / metadata files
+._*
+
+# Claude
+.claude/

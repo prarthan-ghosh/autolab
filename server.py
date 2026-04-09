@@ -67,7 +67,6 @@ def validate_config(config: dict, mode: str) -> None:
     ]
     connected_paths = [
         'printer.serial_device', 'printer.baud_rate', 'printer.swap_yz_axes',
-        'emergency_stop.gpio_pin',
     ]
     test_paths = ['simulation.movement_delay']
 

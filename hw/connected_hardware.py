@@ -8,7 +8,6 @@ import asyncio
 import re
 import time
 import serial
-import pigpio
 from typing import Dict, Any, Optional
 from .abstract_hardware import (
     HardwareInterface, Position, CommandAck,
@@ -21,11 +20,9 @@ class ConnectedHardware(HardwareInterface):
 
     def __init__(self, config: Dict[str, Any]):
         super().__init__(config)
-        self.pi: Optional[pigpio.pi] = None
         self.printer_serial: Optional[serial.Serial] = None
         self.nozzle_pos = Position(0.0, 0.0, 0.0)
         self._serial_lock = asyncio.Lock()
-        self._event_loop: Optional[asyncio.AbstractEventLoop] = None
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -33,13 +30,6 @@ class ConnectedHardware(HardwareInterface):
 
     async def initialize(self) -> bool:
         """Initialize connected hardware following Anycubic Kobra 2 Neo pattern."""
-        self._event_loop = asyncio.get_event_loop()
-
-        # Initialize pigpio
-        self.pi = pigpio.pi()
-        if not self.pi.connected:
-            raise RuntimeError("Failed to connect to pigpio daemon")
-
         # Initialize serial connection to printer
         serial_port = self.config['printer']['serial_device']
         baud_rate = self.config['printer']['baud_rate']
@@ -67,9 +57,6 @@ class ConnectedHardware(HardwareInterface):
         if ack1.status != CommandStatus.OK or ack2.status != CommandStatus.OK:
             print(f"WARNING: Failed to set safe modes. G21: {ack1.status}, G90: {ack2.status}")
 
-        # Register GPIO emergency stop callback
-        self._setup_gpio_pins()
-
         # Home nozzle on startup
         print("\nHoming nozzle to origin (0, 0, 0)...")
         print("(This may take 30-60 seconds - please wait...)")
@@ -85,20 +72,7 @@ class ConnectedHardware(HardwareInterface):
         """Shutdown connected hardware."""
         if self.printer_serial and self.printer_serial.is_open:
             await asyncio.get_event_loop().run_in_executor(None, self.printer_serial.close)
-        if self.pi:
-            self.pi.stop()
         return True
-
-    def _setup_gpio_pins(self):
-        """Configure GPIO pins and register emergency stop callback."""
-        pin = self.config['emergency_stop']['gpio_pin']
-        self.pi.set_mode(pin, pigpio.INPUT)
-        self.pi.set_pull_up_down(pin, pigpio.PUD_UP)
-        self.pi.callback(pin, pigpio.FALLING_EDGE, self._gpio_estop_callback)
-
-    def _gpio_estop_callback(self, gpio, level, tick):
-        """Called from pigpio thread on GPIO falling edge; schedules emergency_stop coroutine."""
-        asyncio.run_coroutine_threadsafe(self.emergency_stop(), self._event_loop)
 
     # ------------------------------------------------------------------
     # Serial communication
@@ -349,7 +323,7 @@ class ConnectedHardware(HardwareInterface):
         """Check if hardware is ready for commands."""
         if self.state not in ('idle',):
             return False
-        if not (self.pi and self.pi.connected and self.printer_serial and self.printer_serial.is_open):
+        if not (self.printer_serial and self.printer_serial.is_open):
             return False
         return True
 
