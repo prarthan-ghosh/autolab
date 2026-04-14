@@ -9,6 +9,7 @@ A web-based interface for controlling a 3D printer gantry with live camera monit
 - Raspberry Pi 4 (or later)
 - Raspberry Pi HQ Camera (IMX477) with Arducam C-mount LN046 manual focus lens
 - Anycubic Kobra 2 Neo (or any Marlin-based printer) connected via USB
+- GPIO wiring: momentary button between GPIO 27 and GND for hardware e-stop
 
 ---
 
@@ -24,7 +25,10 @@ pip install -r requirements.txt
 
 # 3. Install system packages (Raspberry Pi only)
 sudo apt update
-sudo apt install -y python3-picamera2 python3-libcamera
+sudo apt install -y python3-picamera2 python3-libcamera pigpio
+
+# 4. Start pigpio daemon (required for GPIO e-stop)
+sudo systemctl enable --now pigpiod
 ```
 
 ---
@@ -43,6 +47,7 @@ Key sections:
 - **`printer`** — serial device path, baud rate, axis swap, safe movement limits, default feedrate
 - **`camera`** — sharpness and JPEG quality (focus is set physically on the lens)
 - **`stream`** — preview resolution and frame rate
+- **`emergency_stop`** — GPIO pin number
 - **`simulation`** — `movement_delay` (test mode only, controls interpolation speed)
 
 ---
@@ -52,12 +57,16 @@ Key sections:
 **Test mode** (simulation, no hardware required):
 
 ```bash
+export SECRET_KEY=change_me_in_production
 python server.py --mode test
+# or via uvicorn directly:
+SECRET_KEY=dev python -m uvicorn server:app --port 5000
 ```
 
 **Connected mode** (real hardware):
 
 ```bash
+export SECRET_KEY=change_me_in_production
 python server.py --mode connected
 ```
 
@@ -86,10 +95,63 @@ Access the web interface at `http://<raspberry-pi-ip>:5000`.
 
 ## Accessing the Pi from Mac
 
-**SSH:**
+**SSH over USB (wired):**
+```bash
+ssh pi@raspberrypi.local
+```
+Requires a USB-C to micro-USB data cable plugged into the Pi's **USB port** (not PWR IN). The Pi presents itself as a virtual Ethernet adapter via `rpi-usb-gadget`. No network needed.
+
+**SSH over Tailscale (anywhere):**
 ```bash
 tailscale ssh pi@raspberrypi
 ```
+
+---
+
+## Adding a New WiFi Network (via USB SSH)
+
+Use this when you're in a new location and need to connect the Pi to a new WiFi network before it has any wireless access.
+
+**1. Connect via USB:**
+```bash
+ssh pi@raspberrypi.local
+```
+
+**2a. Standard WPA2 network:**
+```bash
+sudo nmcli connection add type wifi con-name "NetworkSSID" ssid "NetworkSSID" \
+  wifi-sec.key-mgmt wpa-psk wifi-sec.psk "networkpassword"
+sudo nmcli connection up "NetworkSSID"
+```
+
+**2b. Enterprise network (eduroam-style, PEAP/MSCHAPv2):**
+```bash
+sudo nmcli connection add type wifi ssid "NetworkSSID" \
+  wifi-sec.key-mgmt wpa-eap \
+  802-1x.eap peap \
+  802-1x.identity "your@email.edu" \
+  802-1x.password "yourpassword" \
+  802-1x.phase2-auth mschapv2
+sudo nmcli connection up "NetworkSSID"
+```
+
+**3. Verify connection:**
+```bash
+nmcli device status
+ping -c 3 8.8.8.8
+```
+
+**4. To list saved connections:**
+```bash
+nmcli connection show
+```
+
+**5. To delete a saved connection:**
+```bash
+sudo nmcli connection delete "ConnectionName"
+```
+
+---
 
 **Mount the project directory for editing (sshfs):**
 ```bash
@@ -125,6 +187,11 @@ http://100.72.164.72:5000
 ```bash
 sudo usermod -a -G dialout $USER
 # then log out and back in
+```
+
+**pigpiod not running**
+```bash
+sudo systemctl start pigpiod
 ```
 
 **Camera not detected**
