@@ -72,9 +72,15 @@
                         </div>
                     </div>
                     
-                    <!-- Homing Button -->
+                    <!-- Homing Buttons -->
                     <div class="control-row">
                         <button id="home-nozzle-btn" class="btn btn-primary">Home Nozzle</button>
+                        <button id="firmware-home-btn" class="btn btn-secondary" title="G28 X Y — home X and Y against gantry endstops (skips Z)">Firmware Home</button>
+                    </div>
+                    <div class="control-row" title="G92 Z — declare the current physical Z as this logical value. Use to calibrate the Z origin without homing.">
+                        <label style="font-size: 0.85rem;">Set Z =</label>
+                        <input type="number" id="set-z-ref-input" class="position-input" placeholder="Z (mm)" step="0.1" style="width: 90px;">
+                        <button id="set-z-ref-btn" class="btn btn-secondary btn-small">Apply</button>
                     </div>
                 </div>
 

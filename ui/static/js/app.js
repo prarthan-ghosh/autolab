@@ -246,9 +246,22 @@ class PrinterInterface {
             }
         };
         
-        // Homing button
+        // Homing buttons
         safeBind('home-nozzle-btn', 'click', () => {
             this.homeNozzle();
+        });
+        safeBind('firmware-home-btn', 'click', () => {
+            this.sendCommand('cmd.firmware_home_xy', {});
+        });
+        safeBind('set-z-ref-btn', 'click', () => {
+            const input = document.getElementById('set-z-ref-input');
+            const raw = input && input.value;
+            const z = parseFloat(raw);
+            if (isNaN(z)) {
+                alert('Enter a numeric Z value.');
+                return;
+            }
+            this.sendCommand('cmd.set_z_reference', { z });
         });
         
         // Incremental movement buttons (±1mm)
@@ -493,7 +506,7 @@ class PrinterInterface {
         }
         
         // Check if this is a movement command
-        const isMovementCommand = command.startsWith('cmd.move_') || command === 'cmd.home_nozzle';
+        const isMovementCommand = command.startsWith('cmd.move_') || command === 'cmd.home_nozzle' || command === 'cmd.firmware_home_xy';
         if (isMovementCommand && this.moving) {
             console.log('Movement in progress — command dropped:', command);
             return;
@@ -675,7 +688,7 @@ class PrinterInterface {
         // Coordinate mapping: Printer (X, Y, Z) -> Three.js (x, y, -z)
         // Printer X -> Three.js +x (Right)
         // Printer Y -> Three.js -z (Back)
-        // Printer Z -> Inverted: Z=0 is UP (Three.js high Y), positive Z is DOWN (Three.js low Y)
+        // Printer Z -> Z=0 is at Bed Surface (Three.js low Y), positive Z is UP (Three.js high Y)
         const workspaceWidth = this.config.x_max - this.config.x_min;
         const workspaceHeight = this.config.z_max - this.config.z_min;
         const workspaceDepth = this.config.y_max - this.config.y_min;
@@ -767,7 +780,7 @@ class PrinterInterface {
 
         // --- Origin marker (at Printer 0,0,0 -> Three.js 0, _zZeroY, 0) ---
         const originMarker = new THREE.Mesh(new THREE.SphereGeometry(4, 16, 16), new THREE.MeshBasicMaterial({ color: 0x00ff00 }));
-        this._zZeroY = frameH - 50; 
+        this._zZeroY = bedSurfaceY; 
         originMarker.position.set(0, this._zZeroY, 0);
         this.scene.add(originMarker);
 
@@ -804,7 +817,7 @@ class PrinterInterface {
         this.workspaceBox = new THREE.LineSegments(volEdges, volMat);
         this.workspaceBox.position.set(
             this.config.x_min + workspaceWidth / 2,
-            this._zZeroY - workspaceHeight / 2,
+            this._zZeroY + workspaceHeight / 2,
             -(this.config.y_min + workspaceDepth / 2)
         );
         this.scene.add(this.workspaceBox);
@@ -1087,9 +1100,9 @@ class PrinterInterface {
         }
 
         // Gantry moves in printer Z
-        // Z=0 is UP (at _gantryBaseY), positive Z moves DOWN (decreases Y)
+        // Z=0 is at Bed Surface (at _gantryBaseY), positive Z moves UP (increases Y)
         if (this.gantryGroup) {
-            this.gantryGroup.position.y = (this._gantryBaseY || 350) - pz;
+            this.gantryGroup.position.y = (this._gantryBaseY || 50) + pz;
         }
 
         // Printhead moves in printer X → Three.js X
@@ -1109,8 +1122,9 @@ class PrinterInterface {
         
         // Check if this was a movement command
         const isMovementCommand = this.lastCommand && (
-            this.lastCommand.command.startsWith('cmd.move_') || 
-            this.lastCommand.command === 'cmd.home_nozzle'
+            this.lastCommand.command.startsWith('cmd.move_') ||
+            this.lastCommand.command === 'cmd.home_nozzle' ||
+            this.lastCommand.command === 'cmd.firmware_home_xy'
         );
         
         // Update UI based on command status

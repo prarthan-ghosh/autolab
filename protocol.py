@@ -79,6 +79,20 @@ class Protocol:
         self.pipette = hardware.pipette
         self._on_event = on_event
         self._default_feedrate = hardware.config['printer']['move_feedrate_default']
+        self._limits = hardware.config['printer']['safe_limits']
+
+    @property
+    def x_min(self) -> float: return float(self._limits['x_min'])
+    @property
+    def x_max(self) -> float: return float(self._limits['x_max'])
+    @property
+    def y_min(self) -> float: return float(self._limits['y_min'])
+    @property
+    def y_max(self) -> float: return float(self._limits['y_max'])
+    @property
+    def z_min(self) -> float: return float(self._limits['z_min'])
+    @property
+    def z_max(self) -> float: return float(self._limits['z_max'])
 
     # ------------------------------------------------------------------
     # Events (used by the server to stream progress to the UI)
@@ -171,7 +185,7 @@ def list_protocols(directory: Path = PROTOCOLS_DIR) -> List[ProtocolInfo]:
         return []
     out: List[ProtocolInfo] = []
     for path in sorted(directory.glob("*.py")):
-        if path.name.startswith("_"):
+        if path.name.startswith("_") or path.name.startswith("."):
             continue
         try:
             mod = _load_module(path)

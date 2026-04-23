@@ -182,11 +182,9 @@ class ConnectedHardware(HardwareInterface):
         Returns Position on success, None on parse failure.
         """
         ack = await self._send_gcode("M114", timeout=5.0)
+        print(f"[M114] status={ack.status.value} raw={ack.message!r}", flush=True)
         if ack.status != CommandStatus.OK:
             return None
-        # M114 response: "X:10.00 Y:20.00 Z:5.00 E:0.00 Count X:0 Y:0 Z:0"
-        # or embedded in the "ok" line itself on some firmware versions.
-        # We parse the 'ok' message text for X/Y/Z values.
         m = re.search(r'X:(-?[\d.]+)\s+Y:(-?[\d.]+)\s+Z:(-?[\d.]+)', ack.message)
         if m:
             rx, ry, rz = float(m.group(1)), float(m.group(2)), float(m.group(3))
@@ -220,16 +218,10 @@ class ConnectedHardware(HardwareInterface):
         await self.begin_move()
         try:
             swap_yz = self.config['printer']['swap_yz_axes']
-            z_off = self.config['printer'].get('z_offset', 0.0)
-            
-            # Invert Z: physically, z=0 is up. Positive logical Z moves DOWN.
-            # physical_z = z_offset - z
-            phys_z = z_off - z
-            
             if swap_yz:
-                gcode = f"G1 X{x:.3f} Y{phys_z:.3f} Z{y:.3f} F{feedrate}"
+                gcode = f"G1 X{x:.3f} Y{z:.3f} Z{y:.3f} F{feedrate}"
             else:
-                gcode = f"G1 X{x:.3f} Y{y:.3f} Z{phys_z:.3f} F{feedrate}"
+                gcode = f"G1 X{x:.3f} Y{y:.3f} Z{z:.3f} F{feedrate}"
 
             ack = await self._send_gcode(gcode, timeout=30.0)
             if ack.status != CommandStatus.OK:
@@ -277,7 +269,12 @@ class ConnectedHardware(HardwareInterface):
         return Position(self.nozzle_pos.x, self.nozzle_pos.y, self.nozzle_pos.z)
 
     async def home_nozzle(self) -> CommandAck:
-        """Manual homing: set current position to configured home_position using G92."""
+        """
+        Soft-home: physically move the head to `printer.home_position` from the
+        config. Z is raised first (if home_position.z is above current Z) to
+        avoid dragging across the bed. Does NOT use G28 — the Kobra 2 Neo
+        homing cycle uses a nozzle switch which was removed.
+        """
         if self.state == 'emergency_stop':
             return CommandAck(
                 id=f"home_nozzle_{int(time.time() * 1000)}",
@@ -286,23 +283,56 @@ class ConnectedHardware(HardwareInterface):
                 timestamp=time.time(),
             )
 
+        hp_cfg = self.config['printer'].get('home_position', {'x': 0.0, 'y': 0.0, 'z': 0.0})
+        hx, hy, hz = float(hp_cfg['x']), float(hp_cfg['y']), float(hp_cfg['z'])
+        if not self.check_nozzle_limits(hx, hy, hz):
+            return CommandAck(
+                id=f"home_nozzle_{int(time.time() * 1000)}",
+                status=CommandStatus.ERROR,
+                message=f"home_position ({hx}, {hy}, {hz}) outside safe limits",
+                timestamp=time.time(),
+            )
+
+        feedrate = int(self.config['printer']['move_feedrate_default'])
+        swap_yz = self.config['printer']['swap_yz_axes']
+
         await self.begin_homing()
         try:
-            hp = self.config['printer'].get('home_position', {'x': 0.0, 'y': 0.0, 'z': 0.0})
-            # G92: Set current position to these values without moving
-            gcode = f"G92 X{hp['x']:.3f} Y{hp['y']:.3f} Z{hp['z']:.3f}"
-            ack = await self._send_gcode(gcode, timeout=5.0)
-            
-            if ack.status == CommandStatus.OK:
-                # Update local state to the new "home"
-                self.nozzle_pos = Position(hp['x'], hp['y'], hp['z'])
-                await self.complete_homing()
-                ack.message = f"Manual homing completed (G92) — position set to: ({self.nozzle_pos.x:.1f}, {self.nozzle_pos.y:.1f}, {self.nozzle_pos.z:.1f})"
+            # Step 1: lift Z first if target Z is above current Z.
+            if hz > self.nozzle_pos.z:
+                lift = f"G1 Z{hy:.3f} F{feedrate}" if swap_yz else f"G1 Z{hz:.3f} F{feedrate}"
+                ack = await self._send_gcode(lift, timeout=30.0)
+                if ack.status != CommandStatus.OK:
+                    await self.fail_homing()
+                    return ack
+
+            # Step 2: full XYZ move to home_position.
+            if swap_yz:
+                gcode = f"G1 X{hx:.3f} Y{hz:.3f} Z{hy:.3f} F{feedrate}"
             else:
+                gcode = f"G1 X{hx:.3f} Y{hy:.3f} Z{hz:.3f} F{feedrate}"
+            ack = await self._send_gcode(gcode, timeout=60.0)
+            if ack.status != CommandStatus.OK:
                 await self.fail_homing()
+                return ack
+
+            ack_m400 = await self._send_gcode("M400", timeout=120.0)
+            if ack_m400.status != CommandStatus.OK:
+                await self.fail_homing()
+                return ack_m400
+
+            pos = await self._query_position()
+            self.nozzle_pos = pos if pos is not None else Position(hx, hy, hz)
+
+            await self.complete_homing()
+            ack.message = (
+                f"Soft-home completed — at ({self.nozzle_pos.x:.1f}, "
+                f"{self.nozzle_pos.y:.1f}, {self.nozzle_pos.z:.1f})"
+            )
             return ack
+
         except Exception as e:
-            self.logger.error(f"home_nozzle (G92) failed: {e}", exc_info=True)
+            self.logger.error(f"home_nozzle failed: {e}", exc_info=True)
             await self.fail_homing()
             return CommandAck(
                 id=f"home_nozzle_{int(time.time() * 1000)}",
@@ -310,6 +340,72 @@ class ConnectedHardware(HardwareInterface):
                 message=str(e),
                 timestamp=time.time(),
             )
+
+    async def firmware_home_xy(self) -> CommandAck:
+        """
+        Home X and Y against the gantry endstops (G28 X Y). Skips Z — the
+        Kobra 2 Neo Z home uses the nozzle switch, which is gone. Sets
+        firmware origin to the physical left-front corner so subsequent
+        moves use real coordinates.
+        """
+        if self.state == 'emergency_stop':
+            return CommandAck(
+                id=f"firmware_home_{int(time.time() * 1000)}",
+                status=CommandStatus.ERROR,
+                message="Emergency stop active",
+                timestamp=time.time(),
+            )
+
+        await self.begin_homing()
+        try:
+            ack = await self._send_gcode("G28 X Y", timeout=60.0)
+            if ack.status != CommandStatus.OK:
+                await self.fail_homing()
+                return ack
+
+            ack_m400 = await self._send_gcode("M400", timeout=120.0)
+            if ack_m400.status != CommandStatus.OK:
+                await self.fail_homing()
+                return ack_m400
+
+            # G28 leaves the head at Marlin's probe-offset minimums (e.g.,
+            # X=-5.80, Y=-1.00). Relabel that as logical (0, 0) so downstream
+            # moves don't hit our safe-limits floor.
+            ack_g92 = await self._send_gcode("G92 X0 Y0", timeout=5.0)
+            if ack_g92.status != CommandStatus.OK:
+                await self.fail_homing()
+                return ack_g92
+
+            pos = await self._query_position()
+            if pos is not None:
+                self.nozzle_pos = pos
+            await self.complete_homing()
+            ack.message = (
+                f"Firmware home XY done — at ({self.nozzle_pos.x:.1f}, "
+                f"{self.nozzle_pos.y:.1f}, {self.nozzle_pos.z:.1f})"
+            )
+            return ack
+        except Exception as e:
+            self.logger.error(f"firmware_home_xy failed: {e}", exc_info=True)
+            await self.fail_homing()
+            return CommandAck(
+                id=f"firmware_home_{int(time.time() * 1000)}",
+                status=CommandStatus.ERROR,
+                message=str(e),
+                timestamp=time.time(),
+            )
+
+    async def set_z_reference(self, z: float) -> CommandAck:
+        """G92 Z<z>: declare the current physical Z as logical coordinate `z`."""
+        ack = await self._send_gcode(f"G92 Z{float(z):.3f}", timeout=5.0)
+        if ack.status == CommandStatus.OK:
+            pos = await self._query_position()
+            if pos is not None:
+                self.nozzle_pos = pos
+            else:
+                self.nozzle_pos = Position(self.nozzle_pos.x, self.nozzle_pos.y, float(z))
+            ack.message = f"Z reference set to {float(z):.3f}"
+        return ack
 
     # ------------------------------------------------------------------
     # Emergency stop

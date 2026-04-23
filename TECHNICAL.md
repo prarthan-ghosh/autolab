@@ -150,6 +150,70 @@ simulation:
 
 ---
 
+## Protocols
+
+The protocol system allows for complex, automated sequences of movements and pipette actions. Protocols are written as Python scripts in the `protocols/` directory.
+
+### Writing a Protocol
+
+A protocol is a Python file that defines an `async def run(p: Protocol)` function. It may also define metadata constants:
+
+```python
+NAME = "My Protocol"
+DESCRIPTION = "Moves the nozzle in a square and dispenses."
+
+async def run(p):
+    await p.log("Starting protocol...")
+    await p.home()
+    
+    # 3D Movement
+    await p.move(x=100, y=100, z=20)  # Simultaneous XYZ
+    await p.move_z(5)                # Z-only move
+    
+    # Pipette Control
+    await p.pipette_home()           # Reset pipette to 0 (bottom)
+    await p.set_stroke(1000)         # Set stroke length to 1000 steps
+    await p.aspirate()               # Pull up to stroke limit
+    await p.dispense()               # Push back down to 0
+    
+    await p.sleep(1.0)               # Pause for 1 second
+```
+
+### Protocol API (`p` object)
+
+| Method | Description |
+|--------|-------------|
+| `p.home()` | Runs the G28 homing sequence for the nozzle. |
+| `p.move(x, y, z?, f?)` | Moves to absolute coordinates. `z` and `f` (feedrate) are optional. |
+| `p.move_z(z, f?)` | Moves the Z axis only. |
+| `p.pos()` | Returns the current `Position` (x, y, z). |
+| `p.log(msg)` | Logs a message to the console and the Web UI protocol log. |
+| `p.sleep(secs)` | Pauses execution for the specified duration. |
+| `p.pipette_home()` | Resets the pipette stepper position to 0. |
+| `p.set_stroke(steps)` | Sets the upper limit for aspiration. |
+| `p.aspirate()` | Moves the pipette to the upper stroke limit. |
+| `p.dispense()` | Moves the pipette back to the home (0) position. |
+
+### Accessing Safety Limits
+
+Scripts can access the safe limits defined in the configuration:
+- `p.x_min`, `p.x_max`
+- `p.y_min`, `p.y_max`
+- `p.z_min`, `p.z_max`
+
+### Running Protocols
+
+**Via Web UI:**
+Select a protocol from the dropdown in the "Protocols" section and click "Run Protocol". Progress and logs will appear in the black console box below.
+
+**Via CLI:**
+```bash
+python protocol.py protocols/my_script.py --mode test
+python protocol.py protocols/my_script.py --mode connected
+```
+
+---
+
 ## Deployment
 
 ### systemd

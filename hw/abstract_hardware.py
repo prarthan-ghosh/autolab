@@ -108,10 +108,14 @@ class HardwareInterface(ABC):
     _transitions = [
         {'trigger': 'begin_move',      'source': 'idle',                       'dest': 'moving'},
         {'trigger': 'complete_move',   'source': 'moving',                     'dest': 'idle'},
+        {'trigger': 'complete_move',   'source': ['emergency_stop', 'error'],  'dest': None},  # no-op: in-flight cleanup after e-stop
         {'trigger': 'fail_move',       'source': 'moving',                     'dest': 'error'},
+        {'trigger': 'fail_move',       'source': ['emergency_stop', 'error'],  'dest': None},
         {'trigger': 'begin_homing',    'source': 'idle',                       'dest': 'homing'},
         {'trigger': 'complete_homing', 'source': 'homing',                     'dest': 'idle'},
+        {'trigger': 'complete_homing', 'source': ['emergency_stop', 'error'],  'dest': None},
         {'trigger': 'fail_homing',     'source': 'homing',                     'dest': 'error'},
+        {'trigger': 'fail_homing',     'source': ['emergency_stop', 'error'],  'dest': None},
         {'trigger': 'trigger_estop',   'source': ['idle', 'moving', 'homing', 'error'], 'dest': 'emergency_stop'},
         {'trigger': 'trigger_estop',   'source': 'emergency_stop',             'dest': None},  # no-op: re-pressing e-stop is safe
         {'trigger': 'clear_estop',     'source': 'emergency_stop',             'dest': 'idle'},

@@ -166,6 +166,36 @@ class TestHardware(HardwareInterface):
             timestamp=time.time(),
         )
 
+    async def firmware_home_xy(self) -> CommandAck:
+        """Simulate G28 X Y — snap X and Y to 0, leave Z alone."""
+        if self.state == 'emergency_stop':
+            return CommandAck(
+                id=f"firmware_home_{int(time.time() * 1000)}",
+                status=CommandStatus.ERROR,
+                message="Emergency stop active",
+                timestamp=time.time(),
+            )
+        await self.begin_homing()
+        await asyncio.sleep(0.2)
+        self.nozzle_pos = Position(0.0, 0.0, self.nozzle_pos.z)
+        await self.complete_homing()
+        return CommandAck(
+            id=f"firmware_home_{int(time.time() * 1000)}",
+            status=CommandStatus.OK,
+            message="[TEST] firmware home XY completed",
+            timestamp=time.time(),
+        )
+
+    async def set_z_reference(self, z: float) -> CommandAck:
+        """Simulate G92 Z<z> — just rewrite the simulated Z coordinate."""
+        self.nozzle_pos = Position(self.nozzle_pos.x, self.nozzle_pos.y, float(z))
+        return CommandAck(
+            id=f"set_z_ref_{int(time.time() * 1000)}",
+            status=CommandStatus.OK,
+            message=f"[TEST] Z reference set to {float(z):.3f}",
+            timestamp=time.time(),
+        )
+
     # ------------------------------------------------------------------
     # Emergency stop
     # ------------------------------------------------------------------

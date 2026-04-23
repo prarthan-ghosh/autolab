@@ -454,6 +454,23 @@ async def handle_home_nozzle(sid, data=None):
     await sio.emit('telemetry.command_ack', _ack_dict(ack), to=sid)
 
 
+@sio.on('cmd.firmware_home_xy')
+async def handle_firmware_home_xy(sid, data=None):
+    ack = await hardware.firmware_home_xy()
+    await sio.emit('telemetry.command_ack', _ack_dict(ack), to=sid)
+
+
+@sio.on('cmd.set_z_reference')
+async def handle_set_z_reference(sid, data):
+    try:
+        z = float(data['z'])
+    except (KeyError, TypeError, ValueError) as e:
+        await sio.emit('telemetry.command_ack', _error_ack(f"invalid z: {e}"), to=sid)
+        return
+    ack = await hardware.set_z_reference(z)
+    await sio.emit('telemetry.command_ack', _ack_dict(ack), to=sid)
+
+
 @sio.on('cmd.clear_error')
 async def handle_clear_error(sid, data=None):
     try:
