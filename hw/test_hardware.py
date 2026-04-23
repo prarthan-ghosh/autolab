@@ -12,6 +12,7 @@ from .abstract_hardware import (
     HardwareInterface, Position, CommandAck,
     CommandStatus, TelemetryData, _STATE_TO_STATUS,
 )
+from .pipette_hardware import NullPipette
 
 
 class TestHardware(HardwareInterface):
@@ -19,7 +20,9 @@ class TestHardware(HardwareInterface):
 
     def __init__(self, config: Dict[str, Any]):
         super().__init__(config)
-        self.nozzle_pos = Position(0.0, 0.0, 0.0)
+        hp = self.config['printer'].get('home_position', {'x': 0.0, 'y': 0.0, 'z': 0.0})
+        self.nozzle_pos = Position(hp['x'], hp['y'], hp['z'])
+        self.pipette = NullPipette()
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -28,6 +31,9 @@ class TestHardware(HardwareInterface):
     async def initialize(self) -> bool:
         """Initialize test hardware simulation."""
         print("Initializing test hardware simulation (no G-code will be sent)...", flush=True)
+        # Ensure nozzle_pos is set from config on init
+        hp = self.config['printer'].get('home_position', {'x': 0.0, 'y': 0.0, 'z': 0.0})
+        self.nozzle_pos = Position(hp['x'], hp['y'], hp['z'])
         return True
 
     async def shutdown(self) -> bool:
@@ -111,7 +117,7 @@ class TestHardware(HardwareInterface):
         return Position(self.nozzle_pos.x, self.nozzle_pos.y, self.nozzle_pos.z)
 
     async def home_nozzle(self) -> CommandAck:
-        """Simulate homing to origin (0, 0, 0)."""
+        """Simulate homing to configured home_position."""
         if self.state == 'emergency_stop':
             return CommandAck(
                 id=f"home_nozzle_{int(time.time() * 1000)}",
@@ -121,14 +127,17 @@ class TestHardware(HardwareInterface):
             )
 
         await self.begin_homing()
+        
+        hp_dict = self.config['printer'].get('home_position', {'x': 0.0, 'y': 0.0, 'z': 0.0})
+        hp = Position(hp_dict['x'], hp_dict['y'], hp_dict['z'])
 
-        distance = (self.nozzle_pos.x ** 2 +
-                    self.nozzle_pos.y ** 2 +
-                    self.nozzle_pos.z ** 2) ** 0.5
+        distance = ((self.nozzle_pos.x - hp.x) ** 2 +
+                    (self.nozzle_pos.y - hp.y) ** 2 +
+                    (self.nozzle_pos.z - hp.z) ** 2) ** 0.5
 
         if distance < 0.01:
-            self.nozzle_pos = Position(0.0, 0.0, 0.0)
-            print("[TEST MODE] Nozzle already at origin — homing skipped", flush=True)
+            self.nozzle_pos = Position(hp.x, hp.y, hp.z)
+            print("[TEST MODE] Nozzle already at home — homing skipped", flush=True)
         else:
             default_feedrate = self.config['printer']['move_feedrate_default']
             movement_delay = self.config['simulation']['movement_delay']
@@ -138,14 +147,14 @@ class TestHardware(HardwareInterface):
             start = Position(self.nozzle_pos.x, self.nozzle_pos.y, self.nozzle_pos.z)
             for i in range(steps):
                 progress = (i + 1) / steps
-                self.nozzle_pos.x = start.x * (1 - progress)
-                self.nozzle_pos.y = start.y * (1 - progress)
-                self.nozzle_pos.z = start.z * (1 - progress)
+                self.nozzle_pos.x = start.x + (hp.x - start.x) * progress
+                self.nozzle_pos.y = start.y + (hp.y - start.y) * progress
+                self.nozzle_pos.z = start.z + (hp.z - start.z) * progress
                 await asyncio.sleep(movement_delay)
 
-            self.nozzle_pos = Position(0.0, 0.0, 0.0)
+            self.nozzle_pos = Position(hp.x, hp.y, hp.z)
             print(
-                f"[TEST MODE] Simulated homing from distance {distance:.2f}mm — no G-code sent"
+                f"[TEST MODE] Simulated homing to {hp.x, hp.y, hp.z} from distance {distance:.2f}mm"
             )
 
         await self.complete_homing()
@@ -153,7 +162,7 @@ class TestHardware(HardwareInterface):
         return CommandAck(
             id=f"home_nozzle_{int(time.time() * 1000)}",
             status=CommandStatus.OK,
-            message="Homing completed (simulated)",
+            message=f"Homing completed (simulated) to ({hp.x:.1f}, {hp.y:.1f}, {hp.z:.1f})",
             timestamp=time.time(),
         )
 

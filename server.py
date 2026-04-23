@@ -26,6 +26,7 @@ import socketio
 
 from hw.hardware_factory import create_hardware
 from hw.abstract_hardware import CommandAck, CommandStatus, validate_coordinates
+from protocol import list_protocols, run_protocol, ProtocolError
 
 logging.basicConfig(level=logging.INFO, format='%(levelname)s %(name)s: %(message)s')
 logger = logging.getLogger(__name__)
@@ -224,6 +225,7 @@ hardware = None
 camera_stream: Optional[CameraStream] = None
 
 _telemetry_task: Optional[asyncio.Task] = None
+_protocol_task: Optional[asyncio.Task] = None
 
 ALLOWED_ORIGINS = os.getenv('ALLOWED_ORIGINS', '*').split(',')
 
@@ -476,6 +478,66 @@ async def handle_emergency_stop(sid, data=None):
 async def handle_clear_emergency_stop(sid, data=None):
     ack = await hardware.clear_emergency_stop()
     await sio.emit('telemetry.command_ack', _ack_dict(ack), to=sid)
+
+
+# ---------------------------------------------------------------------------
+# Protocol scripts
+# ---------------------------------------------------------------------------
+
+@fastapi_app.get('/protocols')
+async def get_protocols():
+    """List available protocol scripts."""
+    return [
+        {'path': p.path, 'name': p.name, 'description': p.description}
+        for p in list_protocols()
+    ]
+
+
+@sio.on('protocol.run')
+async def handle_protocol_run(sid, data):
+    """Run a protocol script. Only one may run at a time."""
+    global _protocol_task
+
+    script_path = (data or {}).get('path')
+    if not script_path:
+        await sio.emit('protocol.event',
+                       {'kind': 'error', 'message': 'missing path'}, to=sid)
+        return
+
+    if _protocol_task and not _protocol_task.done():
+        await sio.emit('protocol.event',
+                       {'kind': 'error', 'message': 'another protocol is running'}, to=sid)
+        return
+
+    async def on_event(event: dict):
+        await sio.emit('protocol.event', event)
+
+    async def runner():
+        await sio.emit('protocol.event',
+                       {'kind': 'started', 'path': script_path, 'timestamp': time.time()})
+        try:
+            await run_protocol(script_path, hardware, on_event=on_event)
+            await sio.emit('protocol.event',
+                           {'kind': 'finished', 'path': script_path, 'timestamp': time.time()})
+        except ProtocolError as e:
+            await sio.emit('protocol.event',
+                           {'kind': 'error', 'message': str(e), 'timestamp': time.time()})
+        except Exception as e:
+            logger.exception("protocol crashed")
+            await sio.emit('protocol.event',
+                           {'kind': 'error', 'message': f'unexpected: {e}', 'timestamp': time.time()})
+
+    _protocol_task = asyncio.create_task(runner())
+
+
+@sio.on('protocol.stop')
+async def handle_protocol_stop(sid, data=None):
+    """Cancel a running protocol."""
+    global _protocol_task
+    if _protocol_task and not _protocol_task.done():
+        _protocol_task.cancel()
+        await sio.emit('protocol.event',
+                       {'kind': 'cancelled', 'timestamp': time.time()})
 
 
 # ---------------------------------------------------------------------------

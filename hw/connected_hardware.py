@@ -13,6 +13,7 @@ from .abstract_hardware import (
     HardwareInterface, Position, CommandAck,
     CommandStatus, SystemStatus, TelemetryData, _STATE_TO_STATUS,
 )
+from .pipette_hardware import Pipette, NullPipette
 
 
 class ConnectedHardware(HardwareInterface):
@@ -23,6 +24,15 @@ class ConnectedHardware(HardwareInterface):
         self.printer_serial: Optional[serial.Serial] = None
         self.nozzle_pos = Position(0.0, 0.0, 0.0)
         self._serial_lock = asyncio.Lock()
+
+        pip_cfg = self.config.get('pipette', {})
+        if pip_cfg.get('enabled', False):
+            self.pipette = Pipette(
+                serial_device=pip_cfg['serial_device'],
+                baud_rate=pip_cfg.get('baud_rate', 115200),
+            )
+        else:
+            self.pipette = NullPipette()
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -57,12 +67,39 @@ class ConnectedHardware(HardwareInterface):
         if ack1.status != CommandStatus.OK or ack2.status != CommandStatus.OK:
             print(f"WARNING: Failed to set safe modes. G21: {ack1.status}, G90: {ack2.status}")
 
+        # Query current position so UI reflects reality from the start
+        pos = await self._query_position()
+        if pos is not None:
+            self.nozzle_pos = pos
+            print(f"Initial position: X={pos.x:.3f} Y={pos.y:.3f} Z={pos.z:.3f}")
+        else:
+            print("WARNING: Could not read initial position — assuming (0, 0, 0)")
+
+        # Print axis limits from firmware (M211) for manual config reference
+        ack_m211 = await self._send_gcode("M211", timeout=5.0)
+        if ack_m211.status == CommandStatus.OK:
+            print(f"Firmware axis limits (M211): {ack_m211.message}")
+        else:
+            print("WARNING: Could not read axis limits (M211)")
+
+        # Pipette — connect if configured. Failures log but don't abort: the
+        # printer side is still useful without the pipette.
+        if isinstance(self.pipette, Pipette):
+            try:
+                print(f"Connecting pipette on {self.pipette.serial_device}...")
+                await self.pipette.connect()
+                print("Pipette connected.")
+            except Exception as e:
+                print(f"WARNING: pipette connect failed: {e} — falling back to no-op")
+                self.pipette = NullPipette()
+
         return True
 
     async def shutdown(self) -> bool:
         """Shutdown connected hardware."""
         if self.printer_serial and self.printer_serial.is_open:
             await asyncio.get_event_loop().run_in_executor(None, self.printer_serial.close)
+        await self.pipette.close()
         return True
 
     # ------------------------------------------------------------------
@@ -74,6 +111,10 @@ class ConnectedHardware(HardwareInterface):
         Send a G-code command and wait for 'ok' response, serialized by a lock.
 
         All blocking serial operations run in a thread executor.
+
+        Handles two Marlin response styles:
+          (a) position/info line, then bare 'ok'
+          (b) 'ok X:... Y:... Z:...' (position on same line as ok)
         """
         async with self._serial_lock:
             if not self.printer_serial or not self.printer_serial.is_open:
@@ -102,8 +143,13 @@ class ConnectedHardware(HardwareInterface):
                     line = await asyncio.get_event_loop().run_in_executor(None, _readline)
 
                     if line:
-                        if line.lower().startswith('ok'):
-                            # Include any lines captured before 'ok' (e.g. M114 position data)
+                        lower = line.lower()
+                        if lower.startswith('ok'):
+                            # Collect the rest of the 'ok' line if it contains data
+                            # e.g. "ok X:0.00 Y:0.00 Z:5.00 ..."
+                            ok_tail = line[2:].strip()
+                            if ok_tail:
+                                response_lines.append(ok_tail)
                             message = ' '.join(response_lines) if response_lines else f"Command '{command}' completed"
                             return CommandAck(
                                 id=command_id,
@@ -111,7 +157,7 @@ class ConnectedHardware(HardwareInterface):
                                 message=message,
                                 timestamp=time.time(),
                             )
-                        if 'error' in line.lower() or 'resend' in line.lower():
+                        if 'error' in lower or 'resend' in lower:
                             return CommandAck(
                                 id=command_id,
                                 status=CommandStatus.ERROR,
@@ -141,9 +187,12 @@ class ConnectedHardware(HardwareInterface):
         # M114 response: "X:10.00 Y:20.00 Z:5.00 E:0.00 Count X:0 Y:0 Z:0"
         # or embedded in the "ok" line itself on some firmware versions.
         # We parse the 'ok' message text for X/Y/Z values.
-        m = re.search(r'X:([\d.]+)\s+Y:([\d.]+)\s+Z:([\d.]+)', ack.message)
+        m = re.search(r'X:(-?[\d.]+)\s+Y:(-?[\d.]+)\s+Z:(-?[\d.]+)', ack.message)
         if m:
-            return Position(float(m.group(1)), float(m.group(2)), float(m.group(3)))
+            rx, ry, rz = float(m.group(1)), float(m.group(2)), float(m.group(3))
+            z_off = self.config['printer'].get('z_offset', 0.0)
+            return Position(rx, ry, rz + z_off)
+        self.logger.warning("M114 parse failed; raw message: %r", ack.message)
         return None
 
     # ------------------------------------------------------------------
@@ -171,10 +220,16 @@ class ConnectedHardware(HardwareInterface):
         await self.begin_move()
         try:
             swap_yz = self.config['printer']['swap_yz_axes']
+            z_off = self.config['printer'].get('z_offset', 0.0)
+            
+            # Invert Z: physically, z=0 is up. Positive logical Z moves DOWN.
+            # physical_z = z_offset - z
+            phys_z = z_off - z
+            
             if swap_yz:
-                gcode = f"G1 X{x:.3f} Y{z:.3f} Z{y:.3f} F{feedrate}"
+                gcode = f"G1 X{x:.3f} Y{phys_z:.3f} Z{y:.3f} F{feedrate}"
             else:
-                gcode = f"G1 X{x:.3f} Y{y:.3f} Z{z:.3f} F{feedrate}"
+                gcode = f"G1 X{x:.3f} Y{y:.3f} Z{phys_z:.3f} F{feedrate}"
 
             ack = await self._send_gcode(gcode, timeout=30.0)
             if ack.status != CommandStatus.OK:
@@ -222,7 +277,7 @@ class ConnectedHardware(HardwareInterface):
         return Position(self.nozzle_pos.x, self.nozzle_pos.y, self.nozzle_pos.z)
 
     async def home_nozzle(self) -> CommandAck:
-        """Home the nozzle to origin (0, 0, 0) using G28."""
+        """Manual homing: set current position to configured home_position using G92."""
         if self.state == 'emergency_stop':
             return CommandAck(
                 id=f"home_nozzle_{int(time.time() * 1000)}",
@@ -233,16 +288,21 @@ class ConnectedHardware(HardwareInterface):
 
         await self.begin_homing()
         try:
-            ack = await self._send_gcode("G28", timeout=120.0)
+            hp = self.config['printer'].get('home_position', {'x': 0.0, 'y': 0.0, 'z': 0.0})
+            # G92: Set current position to these values without moving
+            gcode = f"G92 X{hp['x']:.3f} Y{hp['y']:.3f} Z{hp['z']:.3f}"
+            ack = await self._send_gcode(gcode, timeout=5.0)
+            
             if ack.status == CommandStatus.OK:
-                self.nozzle_pos = Position(0.0, 0.0, 0.0)
+                # Update local state to the new "home"
+                self.nozzle_pos = Position(hp['x'], hp['y'], hp['z'])
                 await self.complete_homing()
-                ack.message = "Homing completed"
+                ack.message = f"Manual homing completed (G92) — position set to: ({self.nozzle_pos.x:.1f}, {self.nozzle_pos.y:.1f}, {self.nozzle_pos.z:.1f})"
             else:
                 await self.fail_homing()
             return ack
         except Exception as e:
-            self.logger.error(f"home_nozzle failed: {e}", exc_info=True)
+            self.logger.error(f"home_nozzle (G92) failed: {e}", exc_info=True)
             await self.fail_homing()
             return CommandAck(
                 id=f"home_nozzle_{int(time.time() * 1000)}",

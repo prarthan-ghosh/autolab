@@ -108,6 +108,30 @@ tailscale ssh pi@raspberrypi
 
 ---
 
+## Switching USB Mode (Host ↔ Gadget)
+
+The Pi Zero 2 W has a single OTG USB port that can act as either a **host** (to read the printer's USB-serial) or a **peripheral** (to appear as a USB ethernet adapter to the Mac). Two helper scripts live in `/usr/local/bin/` on the Pi and toggle between them.
+
+> Each switch edits `/boot/firmware/config.txt` and reboots the Pi (device-tree changes require it). Both scripts are idempotent and require sudo. WiFi/Tailscale connectivity is unaffected, so you stay reachable after the reboot.
+
+**Switch to HOST mode** — use when the 3D printer is plugged into the Pi's USB port. `/dev/ttyUSB0` will appear after reboot.
+```bash
+tailscale ssh pi@raspberrypi sudo usb-host
+```
+
+**Switch to GADGET mode** — use when the Mac is plugged into the Pi via USB data cable. The Mac will see a new virtual ethernet interface (`rpi-usb-gadget`), enabling `ssh pi@raspberrypi.local` with no network.
+```bash
+tailscale ssh pi@raspberrypi sudo usb-gadget
+```
+
+**What the scripts do:**
+- Replace a marker-bounded `[all]` block in `/boot/firmware/config.txt` with `dtoverlay=dwc2,dr_mode=host` or `dr_mode=peripheral`
+- Host mode: remove `/etc/modules-load.d/usb-gadget.conf`
+- Gadget mode: write `dwc2` + `g_ether` into `/etc/modules-load.d/usb-gadget.conf`
+- Reboot after 3s
+
+---
+
 ## Adding a New WiFi Network (via USB SSH)
 
 Use this when you're in a new location and need to connect the Pi to a new WiFi network before it has any wireless access.

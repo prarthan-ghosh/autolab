@@ -9,22 +9,43 @@ printer:
   swap_yz_axes: false  # Standard Kobra 2 Neo axis layout (Y=bed, Z=gantry)
   # Physical machine dimensions (actual hardware measurements, used for visualization)
   physical:
-    bed_width: 230      # mm (X) - full PEI plate
-    bed_depth: 230      # mm (Y) - full PEI plate
-    frame_width: 350    # mm - X span between uprights
-    frame_depth: 300    # mm - Y depth of base
-    frame_height: 400   # mm - upright height
-    gantry_width: 300   # mm - X-gantry bar length
+    bed_width: 230      # mm (X) - from M211 X max
+    bed_depth: 230      # mm (Y) - from M211 Y max
+    frame_width: 300    # mm - X span between uprights (measure to refine)
+    frame_depth: 300    # mm - Y depth of base (measure to refine)
+    frame_height: 400   # mm - upright height (measure to refine)
+    gantry_width: 300   # mm - X-gantry bar length (measure to refine)
+
+  # Default position to set after manual homing (G92)
+  # This is where the head is physically located when you press "Home"
+  home_position:
+    x: 0.0
+    y: 0.0
+    z: 0.0
+  
+  # Fine-tune the Z-axis mapping if it doesn't line up physically
+  # Positive value shifts the software Z up relative to physical
+  z_offset: 0.0
 
   # Software-enforced safe movement limits (nozzle will not move outside these)
   safe_limits:
-    x_min: 5.0   # mm - margin from left edge
-    x_max: 215.0 # mm - margin from right edge
-    y_min: 5.0   # mm - margin from front edge
-    y_max: 215.0 # mm - margin from back edge
+    x_min: 0.0   # mm - M211 Min X is -5.8 (probe offset); 0 is safe floor
+    x_max: 225.0 # mm - 5mm margin from M211 X max (230)
+    y_min: 0.0   # mm - M211 Min Y is -1.0 (probe offset); 0 is safe floor
+    y_max: 225.0 # mm - 5mm margin from M211 Y max (230)
     z_min: 0.0   # mm - bed level
-    z_max: 245.0 # mm - below top of frame
+    z_max: 245.0 # mm - 5mm margin from M211 Z max (250)
   move_feedrate_default: 1500  # mm/min
+
+# Pipette (Arduino stepper driver, firmware/pipette/pipette.ino)
+pipette:
+  enabled: true
+  serial_device: "/dev/ttyUSB1"
+  baud_rate: 115200
+  # Suggested stroke length in steps (positive). Protocol scripts can override
+  # via p.pipette.set_limit(N). Not auto-applied on startup — the user must
+  # position the pipette at the mechanical lower stop and HOME first.
+  stroke_steps: 1000
 
 # Camera configuration
 # For Arducam C-mount LN046 manual focus lens with Raspberry Pi HQ Camera
