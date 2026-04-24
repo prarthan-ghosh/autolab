@@ -275,27 +275,27 @@ class PrinterInterface {
         
         // Incremental movement buttons (±1mm)
         safeBind('x-plus-btn', 'click', () => {
-            this.moveIncremental('x', 1.0);
+            this.moveIncremental('x', 10.0);
         });
         safeBind('x-minus-btn', 'click', () => {
-            this.moveIncremental('x', -1.0);
+            this.moveIncremental('x', -10.0);
         });
         // Incremental movement buttons (±1mm)
         safeBind('y-plus-btn', 'click', () => {
             console.log('Y+ button clicked');
-            this.moveIncremental('y', 1.0);
+            this.moveIncremental('y', 10.0);
         });
         safeBind('y-minus-btn', 'click', () => {
             console.log('Y- button clicked');
-            this.moveIncremental('y', -1.0);
+            this.moveIncremental('y', -10.0);
         });
         safeBind('z-plus-btn', 'click', () => {
             console.log('Z+ button clicked');
-            this.moveIncremental('z', 1.0);
+            this.moveIncremental('z', 10.0);
         });
         safeBind('z-minus-btn', 'click', () => {
             console.log('Z- button clicked');
-            this.moveIncremental('z', -1.0);
+            this.moveIncremental('z', -10.0);
         });
         
         // Nozzle movement controls - individual axis buttons

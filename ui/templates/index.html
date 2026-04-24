@@ -90,22 +90,22 @@
                     <div class="nozzle-controls">
                         <div class="axis-control">
                             <label>X</label>
-                            <button id="x-minus-btn" class="btn btn-small btn-secondary">−1</button>
-                            <button id="x-plus-btn" class="btn btn-small btn-primary">+1</button>
+                            <button id="x-minus-btn" class="btn btn-small btn-secondary">−10</button>
+                            <button id="x-plus-btn" class="btn btn-small btn-primary">+10</button>
                             <input type="number" id="nozzle-x-input" class="position-input" placeholder="X (mm)" step="0.1" title="Absolute X position in mm">
                             <button id="move-x-btn" class="btn btn-primary btn-small">Move X</button>
                         </div>
                         <div class="axis-control">
                             <label>Y</label>
-                            <button id="y-minus-btn" class="btn btn-small btn-secondary">−1</button>
-                            <button id="y-plus-btn" class="btn btn-small btn-primary">+1</button>
+                            <button id="y-minus-btn" class="btn btn-small btn-secondary">−10</button>
+                            <button id="y-plus-btn" class="btn btn-small btn-primary">+10</button>
                             <input type="number" id="nozzle-y-input" class="position-input" placeholder="Y (mm)" step="0.1" title="Absolute Y position in mm">
                             <button id="move-y-btn" class="btn btn-primary btn-small">Move Y</button>
                         </div>
                         <div class="axis-control">
                             <label>Z</label>
-                            <button id="z-minus-btn" class="btn btn-small btn-secondary">−1</button>
-                            <button id="z-plus-btn" class="btn btn-small btn-primary">+1</button>
+                            <button id="z-minus-btn" class="btn btn-small btn-secondary">−10</button>
+                            <button id="z-plus-btn" class="btn btn-small btn-primary">+10</button>
                             <input type="number" id="nozzle-z-input" class="position-input" placeholder="Z (mm)" step="0.1" title="Absolute Z position in mm">
                             <button id="move-z-btn" class="btn btn-primary btn-small">Move Z</button>
                         </div>
@@ -181,20 +181,20 @@
                     <div class="control-row">
                         <button id="pip-home-btn" class="btn btn-secondary btn-small">Home</button>
                         <label style="font-size: 0.85rem;">Limit</label>
-                        <input type="number" id="pip-limit-input" class="position-input" placeholder="steps" step="1" value="1000" style="width: 80px;">
+                        <input type="number" id="pip-limit-input" class="position-input" placeholder="steps" step="1" value="1300" style="width: 80px;">
                         <button id="pip-limit-btn" class="btn btn-secondary btn-small">Set</button>
                     </div>
                     <div class="control-row">
                         <label style="font-size: 0.85rem;">Speed</label>
-                        <input type="number" id="pip-speed-input" class="position-input" step="10" value="800" style="width: 80px;">
+                        <input type="number" id="pip-speed-input" class="position-input" step="10" value="700" style="width: 80px;">
                         <button id="pip-speed-btn" class="btn btn-secondary btn-small">Apply</button>
                         <label style="font-size: 0.85rem;">Accel</label>
-                        <input type="number" id="pip-accel-input" class="position-input" step="10" value="400" style="width: 80px;">
+                        <input type="number" id="pip-accel-input" class="position-input" step="10" value="100" style="width: 80px;">
                         <button id="pip-accel-btn" class="btn btn-secondary btn-small">Apply</button>
                     </div>
                     <div class="control-row" title="Extra steps added to ASPIRATE to absorb mechanical slop. Tune so one aspirate+dispense returns to start.">
                         <label style="font-size: 0.85rem;">Backlash</label>
-                        <input type="number" id="pip-backlash-input" class="position-input" step="1" value="0" style="width: 80px;">
+                        <input type="number" id="pip-backlash-input" class="position-input" step="1" value="250" style="width: 80px;">
                         <button id="pip-backlash-btn" class="btn btn-secondary btn-small">Apply</button>
                     </div>
                     <div class="control-row">

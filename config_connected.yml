@@ -35,7 +35,7 @@ printer:
     y_max: 225.0 # mm - 5mm margin from M211 Y max (230)
     z_min: 0.0   # mm - bed level
     z_max: 245.0 # mm - 5mm margin from M211 Z max (250)
-  move_feedrate_default: 1500  # mm/min
+  move_feedrate_default: 6000  # mm/min
 
 # Pipette (Arduino stepper driver, firmware/pipette/pipette.ino)
 pipette:
