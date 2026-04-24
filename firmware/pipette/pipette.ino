@@ -14,6 +14,8 @@
 //   DISPENSE             Move to 0, block until done.
 //   MOVE <coord>         Absolute move to <coord> steps (negative = up).
 //   JOG <delta>          Relative move by <delta> steps (negative = up).
+//   FREE <delta>         Unchecked relative move. Bypasses all bounds — for
+//                        calibration only. Use to push plunger below 0 etc.
 //   POS                  Report current position.
 //   SPEED <v>            Set max speed (steps/sec).
 //   ACCEL <v>            Set acceleration (steps/sec^2).
@@ -103,6 +105,12 @@ static void handleCommand(String line) {
     long target = stepper.currentPosition() + delta;
     if (limitSet && target < upperLimit) { err("jog would exceed upper limit"); return; }
     if (target > 0)                      { err("jog would exceed lower limit (0)"); return; }
+    if (runTo(target)) ok(); else err("aborted");
+  } else if (verb == "FREE") {
+    // Unchecked relative move — bypasses all bounds. Calibration only.
+    long delta = arg.toInt();
+    long target = stepper.currentPosition() + delta;
+    info("FREE move to " + String(target) + " (unchecked)");
     if (runTo(target)) ok(); else err("aborted");
   } else if (verb == "POS") {
     info("POS " + String(stepper.currentPosition()));

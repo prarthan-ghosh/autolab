@@ -32,6 +32,9 @@ class Pipette:
         self.default_timeout = default_timeout
         self._ser: Optional[serial.Serial] = None
         self._lock = asyncio.Lock()
+        # Last-known values cached from firmware commands.
+        self.upper_limit: Optional[int] = None  # negative step count, None if unset
+        self.lower_limit: int = 0
 
     # ------------------------------------------------------------------
 
@@ -95,6 +98,7 @@ class Pipette:
     async def set_limit(self, steps: int) -> None:
         """Set upper travel limit to `steps` above 0. `steps` > 0."""
         await self._send(f"LIMIT {int(steps)}")
+        self.upper_limit = -int(steps)
 
     async def aspirate(self, timeout: float = 30.0) -> None:
         """One full up-stroke to the upper limit. Blocks until done."""
@@ -109,8 +113,12 @@ class Pipette:
         await self._send(f"MOVE {int(coord)}", timeout=timeout)
 
     async def jog(self, delta: int, timeout: float = 30.0) -> None:
-        """Relative move by `delta` steps (negative = up)."""
+        """Relative move by `delta` steps (negative = up). Limit-enforced."""
         await self._send(f"JOG {int(delta)}", timeout=timeout)
+
+    async def free(self, delta: int, timeout: float = 30.0) -> None:
+        """Unchecked relative move — bypasses all bounds. Calibration only."""
+        await self._send(f"FREE {int(delta)}", timeout=timeout)
 
     async def position(self) -> int:
         """Current position in steps."""
@@ -133,19 +141,33 @@ class Pipette:
 class NullPipette:
     """No-op pipette for test mode. Matches Pipette's async API."""
 
+    def __init__(self):
+        self.upper_limit: Optional[int] = None
+        self.lower_limit: int = 0
+        self._pos: int = 0
+
     async def connect(self) -> None: pass
     async def close(self) -> None: pass
-    async def home(self) -> None: pass
-    async def set_limit(self, steps: int) -> None: pass
+    async def home(self) -> None: self._pos = 0
+    async def set_limit(self, steps: int) -> None:
+        self.upper_limit = -int(steps)
     async def aspirate(self, timeout: float = 30.0) -> None:
         await asyncio.sleep(0.3)
+        if self.upper_limit is not None:
+            self._pos = self.upper_limit
     async def dispense(self, timeout: float = 30.0) -> None:
         await asyncio.sleep(0.3)
+        self._pos = 0
     async def move(self, coord: int, timeout: float = 30.0) -> None:
         await asyncio.sleep(0.1)
+        self._pos = int(coord)
     async def jog(self, delta: int, timeout: float = 30.0) -> None:
         await asyncio.sleep(0.1)
-    async def position(self) -> int: return 0
+        self._pos += int(delta)
+    async def free(self, delta: int, timeout: float = 30.0) -> None:
+        await asyncio.sleep(0.1)
+        self._pos += int(delta)
+    async def position(self) -> int: return self._pos
     async def set_speed(self, steps_per_sec: float) -> None: pass
     async def set_acceleration(self, steps_per_sec2: float) -> None: pass
     async def stop(self) -> None: pass

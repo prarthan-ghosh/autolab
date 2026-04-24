@@ -460,6 +460,75 @@ async def handle_firmware_home_xy(sid, data=None):
     await sio.emit('telemetry.command_ack', _ack_dict(ack), to=sid)
 
 
+@sio.on('cmd.pipette')
+async def handle_pipette(sid, data):
+    """Generic pipette command dispatcher for the tuning UI."""
+    op = (data or {}).get('op')
+    try:
+        if op == 'home':
+            await hardware.pipette.home()
+            msg = "pipette home"
+        elif op == 'set_limit':
+            steps = int(data['steps'])
+            await hardware.pipette.set_limit(steps)
+            msg = f"limit set to {steps}"
+        elif op == 'aspirate':
+            await hardware.pipette.aspirate()
+            msg = "aspirate done"
+        elif op == 'dispense':
+            await hardware.pipette.dispense()
+            msg = "dispense done"
+        elif op == 'jog':
+            delta = int(data['delta'])
+            await hardware.pipette.jog(delta)
+            msg = f"jog {delta}"
+        elif op == 'move':
+            coord = int(data['coord'])
+            await hardware.pipette.move(coord)
+            msg = f"move {coord}"
+        elif op == 'free':
+            delta = int(data['delta'])
+            await hardware.pipette.free(delta)
+            msg = f"free {delta} (unchecked)"
+        elif op == 'set_speed':
+            await hardware.pipette.set_speed(float(data['value']))
+            msg = f"speed = {data['value']}"
+        elif op == 'set_accel':
+            await hardware.pipette.set_acceleration(float(data['value']))
+            msg = f"accel = {data['value']}"
+        elif op == 'pos':
+            p = await hardware.pipette.position()
+            msg = f"pos = {p}"
+        elif op == 'stop':
+            await hardware.pipette.stop()
+            msg = "stop"
+        else:
+            await sio.emit('telemetry.command_ack', _error_ack(f"unknown op: {op}"), to=sid)
+            return
+    except Exception as e:
+        await sio.emit('telemetry.command_ack', _error_ack(f"pipette {op}: {e}"), to=sid)
+        return
+
+    await sio.emit('telemetry.command_ack', _ack_dict(CommandAck(
+        id=f"pipette_{op}_{int(time.time() * 1000)}",
+        status=CommandStatus.OK,
+        message=msg,
+        timestamp=time.time(),
+    )), to=sid)
+
+    # Broadcast updated pipette state to all clients.
+    try:
+        pos = await hardware.pipette.position()
+    except Exception:
+        pos = None
+    await sio.emit('telemetry.pipette', {
+        'position': pos,
+        'upper_limit': hardware.pipette.upper_limit,
+        'lower_limit': hardware.pipette.lower_limit,
+        'timestamp': time.time(),
+    })
+
+
 @sio.on('cmd.set_z_reference')
 async def handle_set_z_reference(sid, data):
     try:

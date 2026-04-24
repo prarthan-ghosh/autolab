@@ -170,6 +170,47 @@
                     <button id="clear-error-btn" class="btn btn-warning btn-large">Clear Error</button>
                 </div>
 
+                <!-- Pipette Tuning (temporary) -->
+                <div class="control-group">
+                    <h3>Pipette Tuning</h3>
+                    <div class="position-display" style="font-size: 0.85rem;">
+                        <div class="position-item"><label>Pos:</label> <span id="pip-pos">—</span> steps</div>
+                        <div class="position-item"><label>Upper:</label> <span id="pip-upper">—</span></div>
+                        <div class="position-item"><label>Lower:</label> <span id="pip-lower">0</span></div>
+                    </div>
+                    <div class="control-row">
+                        <button id="pip-home-btn" class="btn btn-secondary btn-small">Home</button>
+                        <label style="font-size: 0.85rem;">Limit</label>
+                        <input type="number" id="pip-limit-input" class="position-input" placeholder="steps" step="1" value="1000" style="width: 80px;">
+                        <button id="pip-limit-btn" class="btn btn-secondary btn-small">Set</button>
+                    </div>
+                    <div class="control-row">
+                        <label style="font-size: 0.85rem;">Speed</label>
+                        <input type="number" id="pip-speed-input" class="position-input" step="10" value="800" style="width: 80px;">
+                        <button id="pip-speed-btn" class="btn btn-secondary btn-small">Apply</button>
+                        <label style="font-size: 0.85rem;">Accel</label>
+                        <input type="number" id="pip-accel-input" class="position-input" step="10" value="400" style="width: 80px;">
+                        <button id="pip-accel-btn" class="btn btn-secondary btn-small">Apply</button>
+                    </div>
+                    <div class="control-row">
+                        <label style="font-size: 0.85rem;">Go to (abs)</label>
+                        <input type="number" id="pip-goto-input" class="position-input" placeholder="abs pos (≤ 0)" step="1" value="0" style="width: 90px;">
+                        <button id="pip-goto-btn" class="btn btn-small btn-primary" title="MOVE to absolute position (limit-enforced)">Move</button>
+                    </div>
+                    <div class="control-row">
+                        <label style="font-size: 0.85rem;" title="Unchecked relative move from current pos — bypasses limits. Calibration only.">Free (rel)</label>
+                        <input type="number" id="pip-free-input" class="position-input" placeholder="Δ steps" step="1" value="50" style="width: 90px;">
+                        <button id="pip-free-up-btn" class="btn btn-small btn-warning" title="Relative move up by Δ (pos - Δ). No bounds check.">Up</button>
+                        <button id="pip-free-down-btn" class="btn btn-small btn-warning" title="Relative move down by Δ (pos + Δ). No bounds check — can go below 0.">Down</button>
+                    </div>
+                    <div class="control-row">
+                        <button id="pip-aspirate-btn" class="btn btn-primary btn-small">Aspirate</button>
+                        <button id="pip-dispense-btn" class="btn btn-primary btn-small">Dispense</button>
+                        <button id="pip-pos-btn" class="btn btn-secondary btn-small">Pos</button>
+                        <button id="pip-stop-btn" class="btn btn-warning btn-small">Stop</button>
+                    </div>
+                </div>
+
                 <!-- Protocol Scripts -->
                 <div class="control-group">
                     <h3>Protocol Scripts</h3>

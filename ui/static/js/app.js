@@ -226,6 +226,15 @@ class PrinterInterface {
         this.socket.on('protocol.event', (event) => {
             this.handleProtocolEvent(event);
         });
+
+        this.socket.on('telemetry.pipette', (data) => {
+            const posEl = document.getElementById('pip-pos');
+            const upEl  = document.getElementById('pip-upper');
+            const loEl  = document.getElementById('pip-lower');
+            if (posEl) posEl.textContent = (data.position != null) ? data.position : '—';
+            if (upEl)  upEl.textContent  = (data.upper_limit != null) ? data.upper_limit : '(unset)';
+            if (loEl)  loEl.textContent  = (data.lower_limit != null) ? data.lower_limit : '0';
+        });
         
         // Check connection status after a short delay
         setTimeout(() => {
@@ -313,6 +322,25 @@ class PrinterInterface {
         safeBind('clear-error-btn', 'click', () => {
             this.sendCommand('cmd.clear_error', {});
         });
+
+        // Pipette tuning
+        const numVal = (id) => {
+            const el = document.getElementById(id);
+            const n = el ? parseFloat(el.value) : NaN;
+            return isNaN(n) ? null : n;
+        };
+        const pip = (op, extra = {}) => this.sendCommand('cmd.pipette', { op, ...extra });
+        safeBind('pip-home-btn',     'click', () => pip('home'));
+        safeBind('pip-limit-btn',    'click', () => { const v = numVal('pip-limit-input'); if (v != null) pip('set_limit', { steps: v }); });
+        safeBind('pip-speed-btn',    'click', () => { const v = numVal('pip-speed-input'); if (v != null) pip('set_speed', { value: v }); });
+        safeBind('pip-accel-btn',    'click', () => { const v = numVal('pip-accel-input'); if (v != null) pip('set_accel', { value: v }); });
+        safeBind('pip-goto-btn',     'click', () => { const v = numVal('pip-goto-input'); if (v != null) pip('move', { coord: v }); });
+        safeBind('pip-free-up-btn',   'click', () => { const v = numVal('pip-free-input'); if (v != null) pip('free', { delta: -Math.abs(v) }); });
+        safeBind('pip-free-down-btn', 'click', () => { const v = numVal('pip-free-input'); if (v != null) pip('free', { delta:  Math.abs(v) }); });
+        safeBind('pip-aspirate-btn', 'click', () => pip('aspirate'));
+        safeBind('pip-dispense-btn', 'click', () => pip('dispense'));
+        safeBind('pip-pos-btn',      'click', () => pip('pos'));
+        safeBind('pip-stop-btn',     'click', () => pip('stop'));
 
         // Protocols
         safeBind('protocol-run-btn', 'click', () => this.runSelectedProtocol());

@@ -2,7 +2,7 @@
 
 # Printer configuration
 printer:
-  serial_device: "/dev/ttyUSB0"
+  serial_device: "/dev/serial/by-id/usb-1a86_USB_Serial-if00-port0"
   baud_rate: 115200
   # If your printer has Y and Z axes physically swapped (Y button moves Z motor, etc.),
   # set this to true to swap them in G-code commands
@@ -40,7 +40,7 @@ printer:
 # Pipette (Arduino stepper driver, firmware/pipette/pipette.ino)
 pipette:
   enabled: true
-  serial_device: "/dev/ttyUSB1"
+  serial_device: "/dev/serial/by-id/usb-Arduino_Nano_ESP32_48CA432E0D88-if01"
   baud_rate: 115200
   # Suggested stroke length in steps (positive). Protocol scripts can override
   # via p.pipette.set_limit(N). Not auto-applied on startup — the user must
