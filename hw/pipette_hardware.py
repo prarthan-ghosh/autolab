@@ -35,6 +35,10 @@ class Pipette:
         # Last-known values cached from firmware commands.
         self.upper_limit: Optional[int] = None  # negative step count, None if unset
         self.lower_limit: int = 0
+        # Backlash compensation (Python-side, not firmware): after DISPENSE,
+        # send an additional FREE +backlash to absorb slack on the direction
+        # reversal (motor reverses → slack consumed → plunger lags).
+        self.backlash: int = 0
 
     # ------------------------------------------------------------------
 
@@ -105,8 +109,10 @@ class Pipette:
         await self._send("ASPIRATE", timeout=timeout)
 
     async def dispense(self, timeout: float = 30.0) -> None:
-        """One full down-stroke back to 0. Blocks until done."""
+        """Full down-stroke to 0, plus backlash overshoot past 0."""
         await self._send("DISPENSE", timeout=timeout)
+        if self.backlash > 0:
+            await self._send(f"FREE {int(self.backlash)}", timeout=timeout)
 
     async def move(self, coord: int, timeout: float = 30.0) -> None:
         """Absolute move to `coord` steps (negative = up)."""
@@ -134,6 +140,10 @@ class Pipette:
     async def set_acceleration(self, steps_per_sec2: float) -> None:
         await self._send(f"ACCEL {steps_per_sec2}")
 
+    async def set_backlash(self, steps: int) -> None:
+        """Extra steps added to ASPIRATE (Python-side). Stored; not sent to firmware."""
+        self.backlash = max(0, int(steps))
+
     async def stop(self) -> None:
         await self._send("STOP", timeout=2.0)
 
@@ -144,6 +154,7 @@ class NullPipette:
     def __init__(self):
         self.upper_limit: Optional[int] = None
         self.lower_limit: int = 0
+        self.backlash: int = 0
         self._pos: int = 0
 
     async def connect(self) -> None: pass
@@ -170,4 +181,6 @@ class NullPipette:
     async def position(self) -> int: return self._pos
     async def set_speed(self, steps_per_sec: float) -> None: pass
     async def set_acceleration(self, steps_per_sec2: float) -> None: pass
+    async def set_backlash(self, steps: int) -> None:
+        self.backlash = max(0, int(steps))
     async def stop(self) -> None: pass

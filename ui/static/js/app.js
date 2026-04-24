@@ -334,6 +334,7 @@ class PrinterInterface {
         safeBind('pip-limit-btn',    'click', () => { const v = numVal('pip-limit-input'); if (v != null) pip('set_limit', { steps: v }); });
         safeBind('pip-speed-btn',    'click', () => { const v = numVal('pip-speed-input'); if (v != null) pip('set_speed', { value: v }); });
         safeBind('pip-accel-btn',    'click', () => { const v = numVal('pip-accel-input'); if (v != null) pip('set_accel', { value: v }); });
+        safeBind('pip-backlash-btn', 'click', () => { const v = numVal('pip-backlash-input'); if (v != null) pip('set_backlash', { value: v }); });
         safeBind('pip-goto-btn',     'click', () => { const v = numVal('pip-goto-input'); if (v != null) pip('move', { coord: v }); });
         safeBind('pip-free-up-btn',   'click', () => { const v = numVal('pip-free-input'); if (v != null) pip('free', { delta: -Math.abs(v) }); });
         safeBind('pip-free-down-btn', 'click', () => { const v = numVal('pip-free-input'); if (v != null) pip('free', { delta:  Math.abs(v) }); });

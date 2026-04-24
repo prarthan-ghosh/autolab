@@ -496,6 +496,9 @@ async def handle_pipette(sid, data):
         elif op == 'set_accel':
             await hardware.pipette.set_acceleration(float(data['value']))
             msg = f"accel = {data['value']}"
+        elif op == 'set_backlash':
+            await hardware.pipette.set_backlash(int(data['value']))
+            msg = f"backlash = {data['value']}"
         elif op == 'pos':
             p = await hardware.pipette.position()
             msg = f"pos = {p}"

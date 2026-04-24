@@ -4,9 +4,10 @@ NAME = "Pipette test"
 DESCRIPTION = "Lift nozzle to safe Z, home pipette, set stroke, run 3 aspirate/dispense cycles."
 
 SAFE_Z = 80.0        # mm — nozzle/pipette-body height above bed during the test
-STROKE_STEPS = 1000  # tuned value — full aspirate stroke
-SPEED = 800          # steps/sec — tuned so one cycle returns to start
-ACCEL = 40           # steps/sec^2 — tuned so one cycle returns to start
+STROKE_STEPS = 1300  # tuned value — full aspirate stroke
+SPEED = 700          # steps/sec — tuned so one cycle returns to start
+ACCEL = 100          # steps/sec^2 — tuned so one cycle returns to start
+BACKLASH = 250       # extra steps after DISPENSE to absorb direction-change slack
 CYCLES = 1
 DWELL = 0.5          # seconds between moves
 
@@ -17,9 +18,10 @@ async def run(p):
     # await p.log(f"lift nozzle to Z={SAFE_Z} for pipette clearance")
     # await p.move_z(SAFE_Z)
 
-    await p.log(f"set speed={SPEED}, accel={ACCEL}")
+    await p.log(f"set speed={SPEED}, accel={ACCEL}, backlash={BACKLASH}")
     await p.pipette.set_speed(SPEED)
     await p.pipette.set_acceleration(ACCEL)
+    await p.pipette.set_backlash(BACKLASH)
 
     await p.log(f"pipette_home — make sure plunger is at mechanical bottom")
     await p.pipette_home()
