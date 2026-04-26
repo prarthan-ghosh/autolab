@@ -21,7 +21,7 @@ CELLS = [                      # XY of each cell to fill
 ]
 
 # --- Z heights (mm) -----------------------------------------------------
-Z_TRAVEL = 200                # safe cruising height between XY moves
+Z_TRAVEL = 230                # safe cruising height between XY moves
 Z_WATER  = 150.0                # dip depth in the water reservoir
 Z_CELL   = 150.0
 
